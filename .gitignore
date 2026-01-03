@@ -8,3 +8,17 @@ wheels/
 
 # Virtual environments
 .venv
+
+# VS Code
+.vscode/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Models
+*.pt
+*.pth
+
+# Logs
+*.log
