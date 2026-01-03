@@ -1,34 +1,33 @@
 import cv2
+import time
 from ultralytics import YOLO
 
 model = YOLO('yolo11n.pt')
-
-# カメラの起動
 cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-
-# COCOデータセットの猫のIDは変わらず 15 です
-CAT_CLASS_ID = 15
+start_time = None
+last_seen = 0
+notified = False
 
 while cap.isOpened():
     success, frame = cap.read()
-    if not success:
-        break
+    if not success: break
 
-    # 推論実行（書き方はv8と同じです）
-    results = model(frame, classes=[CAT_CLASS_ID], verbose=False)
-
-    # 結果の描画
-    annotated_frame = results[0].plot()
-
+    results = model(frame, classes=[15], verbose=False)
+    
     if len(results[0].boxes) > 0:
-        print("猫ちゃん検出！(YOLO11) 😺")
+        last_seen = time.time()
+        if start_time is None:
+            start_time = time.time()
+            notified = False
+        elif time.time() - start_time >= 10 and not notified:
+            print("検出")
+            notified = True
+    elif start_time is not None and time.time() - last_seen > 1.0:
+        start_time = None
+        notified = False
 
-    cv2.imshow("YOLO11 Cat Detector", annotated_frame)
-
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
+    cv2.imshow("YOLO11", results[0].plot())
+    if cv2.waitKey(1) & 0xFF == ord("q"): break
 
 cap.release()
 cv2.destroyAllWindows()
