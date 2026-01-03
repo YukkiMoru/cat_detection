@@ -16,3 +16,6 @@ detection:
   reset_threshold: 1.0
   confidence: 0.4
   class_id: 15
+  use_motion_filter: true
+  motion_threshold: 500
+  debug_motion: false

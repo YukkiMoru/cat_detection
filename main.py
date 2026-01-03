@@ -2,69 +2,64 @@ import cv2, time, requests, threading, yaml
 from datetime import datetime, timedelta, timezone
 from ultralytics import YOLO
 
-try:
-    with open("config.yml", "r", encoding="utf-8") as f: CFG = yaml.safe_load(f)
-except: CFG = {}
+try: C = yaml.safe_load(open("config.yml", "r", encoding="utf-8"))
+except: C = {}
+def g(k, d):
+    v = C
+    for x in k.split('.'): v = v.get(x) if isinstance(v, dict) else None
+    return v if v is not None else d
 
-def get(path, default):
-    val = CFG
-    for key in path.split('.'):
-        val = val.get(key) if isinstance(val, dict) else None
-    return val if val is not None else default
+WH = g('discord.webhook_url_file', ".secrets/DWU")
+try: WH_URL = open(WH).read().strip()
+except: WH_URL = ""
 
-WEBHOOK_FILE = get('discord.webhook_url_file', ".secrets/DWU")
-try:
-    with open(WEBHOOK_FILE, "r") as f: WEBHOOK_URL = f.read().strip()
-except: WEBHOOK_URL = ""
+HL = g('app.headless', False)
+SZ, FPS = (g('camera.width', 320), g('camera.height', 240)), g('camera.fps', 2)
+DUR, RST, CONF, CID = g('detection.duration_threshold', 3.0), g('detection.reset_threshold', 1.0), g('detection.confidence', 0.4), g('detection.class_id', 15)
+USE_M, M_TH, DBG_M = g('detection.use_motion_filter', True), g('detection.motion_threshold', 500), g('detection.debug_motion', False)
 
-HEADLESS = get('app.headless', False)
-FRAME_SIZE = (get('camera.width', 320), get('camera.height', 240))
-FPS = get('camera.fps', 2)
-THRESH_DUR = get('detection.duration_threshold', 3.0)
-THRESH_RESET = get('detection.reset_threshold', 1.0)
-CONF = get('detection.confidence', 0.4)
-CLASS_ID = get('detection.class_id', 15)
-
-def notify(msg):
-    if WEBHOOK_URL.startswith("http"):
-        try: requests.post(WEBHOOK_URL, json={"content": msg}, timeout=10)
+def notify():
+    if WH_URL.startswith("http"):
+        ts = datetime.now(timezone(timedelta(hours=9))).strftime('%Y/%m/%d %H:%M:%S')
+        try: requests.post(WH_URL, json={"content": f"@everyone [{ts}] 猫検出！🐈"}, timeout=10)
         except: pass
 
 def main():
     model = YOLO('yolo11n.pt')
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_SIZE[0])
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_SIZE[1])
-    cap.set(cv2.CAP_PROP_FPS, FPS)
-
-    start_time, last_seen, notified = None, 0, False
+    cap.set(3, SZ[0]); cap.set(4, SZ[1]); cap.set(5, FPS)
+    st, ls, nt, pg = None, 0, False, None
     print("Monitoring...")
 
     try:
         while cap.isOpened():
-            success, frame = cap.read()
-            if not success: break
+            ret, frame = cap.read()
+            if not ret: time.sleep(0.1); continue
 
-            results = model(frame, classes=[CLASS_ID], conf=CONF, verbose=False)
+            run = True
+            if USE_M:
+                gray = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (21, 21), 0)
+                if pg is None: pg = gray; continue
+                score = cv2.countNonZero(cv2.threshold(cv2.absdiff(pg, gray), 25, 255, cv2.THRESH_BINARY)[1])
+                pg = gray
+                if score < M_TH and st is None:
+                    run = False
+                    if DBG_M: print(f"Skip: {score}")
+
+            res = model(frame, classes=[CID], conf=CONF, verbose=False) if run else []
             now = time.time()
             
-            if len(results[0].boxes):
-                last_seen = now
-                if start_time is None: start_time = now
-                
-                if not notified and (now - start_time >= THRESH_DUR):
-                    print("Detected!")
-                    ts = datetime.now(timezone(timedelta(hours=9), 'JST')).strftime("%Y/%m/%d %H:%M:%S")
-                    threading.Thread(target=notify, args=(f"@everyone [{ts}] 猫を検出しました！🐈",), daemon=True).start()
-                    notified = True
-            elif start_time and (now - last_seen > THRESH_RESET):
-                start_time, notified = None, False
+            if run and res[0].boxes:
+                ls = now
+                if st is None: st = now
+                if not nt and (now - st >= DUR):
+                    print("Detected!"); threading.Thread(target=notify, daemon=True).start(); nt = True
+            elif st and (now - ls > RST): st, nt = None, False
 
-            if not HEADLESS:
-                cv2.imshow("YOLO11", results[0].plot())
+            if not HL:
+                cv2.imshow("YOLO", res[0].plot() if run and res else frame)
                 if cv2.waitKey(1) & 0xFF == ord("q"): break
-    finally:
-        cap.release()
-        if not HEADLESS: cv2.destroyAllWindows()
+            else: time.sleep(0.1)
+    finally: cap.release(); cv2.destroyAllWindows() if not HL else None
 
 if __name__ == "__main__": main()
