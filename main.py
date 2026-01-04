@@ -83,6 +83,8 @@ class CatDetector:
         self.last_seen_time = 0
         self.notified = False
         self.prev_gray = None
+        self.best_frame = None
+        self.max_confidence = 0.0
 
         # Signal handling (Ctrl+C で安全に終了するため)
         signal.signal(signal.SIGINT, self.stop)
@@ -186,6 +188,12 @@ class CatDetector:
                 if should_run_yolo and results and results[0].boxes:
                     detected = True
                     self.last_seen_time = now
+
+                    # ベストショットの更新
+                    current_max_conf = results[0].boxes.conf.max().item()
+                    if current_max_conf > self.max_confidence:
+                        self.max_confidence = current_max_conf
+                        self.best_frame = frame.copy()
                     
                     if self.start_time is None:
                         self.start_time = now
@@ -194,7 +202,10 @@ class CatDetector:
                     # 継続時間が閾値を超え、かつ未通知の場合
                     if not self.notified and (now - self.start_time >= self.cfg.duration_threshold):
                         logger.info(f"Threshold passed ({self.cfg.duration_threshold}s). Sending notification.")
-                        self.notify(frame)
+                        
+                        # ベストショットがあればそれを送信、なければ現在のフレーム
+                        img_to_send = self.best_frame if self.best_frame is not None else frame
+                        self.notify(img_to_send)
                         self.notified = True
                 
                 # 猫が見えなくなってから一定時間経過したらリセット
@@ -202,6 +213,8 @@ class CatDetector:
                     logger.info("Cat lost. Resetting state.")
                     self.start_time = None
                     self.notified = False
+                    self.best_frame = None
+                    self.max_confidence = 0.0
 
                 # 4. 画面表示（ヘッドレスモードでなければ）
                 if not self.cfg.headless:
