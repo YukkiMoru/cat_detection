@@ -2,18 +2,31 @@ discord:
   webhook_url_file: ".secrets/DWU"
 
 app:
-  headless: false
+  headless: ture
 
 camera:
+  id: 0
+    # QVGA (QVGA / 4:3)
   width: 320
   height: 240
+    # VGA (昔のPC標準・アナログテレビ画質)
+  # width: 640
+  # height: 480
+    # XGA (iPadやプロジェクター等で一般的)
+  # width: 1024
+  # height: 768
+    # HD (ハイビジョン / YouTube 720p / ノートPC等)
+  # width: 1280
+  # height: 720
+    # Full HD (FHD / 1080p / 地デジ・Blu-ray)
   # width: 1920
   # height: 1080
   fps: 2
 
 detection:
+  model_path: "yolov11n.pt"
   duration_threshold: 5.0
-  reset_threshold: 1.0
+  reset_threshold: 3.0
   confidence: 0.4
   class_id: 15
   use_motion_filter: true

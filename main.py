@@ -30,11 +30,13 @@ class Config:
         self.webhook_url = self._load_webhook_url()
         
         # Camera settings
+        self.camera_id = self._get('camera.id', 0)
         self.width = self._get('camera.width', 320)
         self.height = self._get('camera.height', 240)
         self.fps = self._get('camera.fps', 2)
         
         # Detection settings
+        self.model_path = self._get('detection.model_path', 'yolov11n.pt')
         self.duration_threshold = self._get('detection.duration_threshold', 3.0)
         self.reset_threshold = self._get('detection.reset_threshold', 1.0)
         self.confidence = self._get('detection.confidence', 0.4)
@@ -73,8 +75,8 @@ class CatDetector:
     """猫検出アプリケーションのメインクラス"""
     def __init__(self, config: Config):
         self.cfg = config
-        logger.info("Loading YOLO model...")
-        self.model = YOLO('yolo11n.pt')
+        logger.info(f"Loading YOLO model: {self.cfg.model_path}...")
+        self.model = YOLO(self.cfg.model_path)
         self.running = True
         self.cap = None
         
@@ -155,8 +157,8 @@ class CatDetector:
         return True
 
     def run(self):
-        logger.info("Starting camera...")
-        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        logger.info(f"Starting camera {self.cfg.camera_id}...")
+        self.cap = cv2.VideoCapture(self.cfg.camera_id, cv2.CAP_DSHOW)
 
         # カメラが開けているか確認
         if not self.cap.isOpened():
