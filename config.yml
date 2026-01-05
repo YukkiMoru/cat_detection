@@ -17,5 +17,5 @@ detection:
   confidence: 0.4
   class_id: 15
   use_motion_filter: true
-  motion_threshold: 500
+  motion_threshold: 50
   debug_motion: false
