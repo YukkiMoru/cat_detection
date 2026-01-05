@@ -157,7 +157,12 @@ class CatDetector:
     def run(self):
         logger.info("Starting camera...")
         self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-        
+
+        # カメラが開けているか確認
+        if not self.cap.isOpened():
+            logger.error("Failed to open camera. Exiting.")
+            return
+
         # カメラ設定
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.height)
@@ -169,21 +174,24 @@ class CatDetector:
             while self.running and self.cap.isOpened():
                 ret, frame = self.cap.read()
                 if not ret:
+                    logger.warning("Failed to read frame from camera. Retrying...")
                     time.sleep(0.1)
                     continue
 
                 # 1. モーション検知チェック
                 should_run_yolo = self.process_motion(frame)
-                
+
                 # 2. YOLO推論
                 results = []
                 if should_run_yolo:
-                    # verbose=Falseでコンソール出力を抑制
-                    results = self.model(frame, classes=[self.cfg.class_id], conf=self.cfg.confidence, verbose=False)
+                    try:
+                        results = self.model(frame, classes=[self.cfg.class_id], conf=self.cfg.confidence, verbose=False)
+                    except Exception as e:
+                        logger.error(f"YOLO inference failed: {e}")
 
                 now = time.time()
                 detected = False
-                
+
                 # 3. 検出判定ロジック
                 if should_run_yolo and results and results[0].boxes:
                     detected = True
@@ -194,20 +202,20 @@ class CatDetector:
                     if current_max_conf > self.max_confidence:
                         self.max_confidence = current_max_conf
                         self.best_frame = frame.copy()
-                    
+
                     if self.start_time is None:
                         self.start_time = now
                         logger.info("Cat detected (start)")
-                    
+
                     # 継続時間が閾値を超え、かつ未通知の場合
                     if not self.notified and (now - self.start_time >= self.cfg.duration_threshold):
                         logger.info(f"Threshold passed ({self.cfg.duration_threshold}s). Sending notification.")
-                        
+
                         # ベストショットがあればそれを送信、なければ現在のフレーム
                         img_to_send = self.best_frame if self.best_frame is not None else frame
                         self.notify(img_to_send)
                         self.notified = True
-                
+
                 # 猫が見えなくなってから一定時間経過したらリセット
                 elif self.start_time and (now - self.last_seen_time > self.cfg.reset_threshold):
                     logger.info("Cat lost. Resetting state.")
@@ -221,13 +229,15 @@ class CatDetector:
                     # 検出時はバウンディングボックス付き、そうでなければ生のフレームを表示
                     annotated_frame = results[0].plot() if (should_run_yolo and results) else frame
                     cv2.imshow("YOLO", annotated_frame)
-                    
+
                     if cv2.waitKey(1) & 0xFF == ord("q"):
                         break
                 else:
                     # ヘッドレス時はCPU負荷を下げるため少し待機
                     time.sleep(0.01)
 
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
         finally:
             if self.cap:
                 self.cap.release()
