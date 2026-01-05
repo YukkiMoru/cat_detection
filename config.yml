@@ -12,7 +12,7 @@ camera:
   fps: 2
 
 detection:
-  duration_threshold: 3.0
+  duration_threshold: 5.0
   reset_threshold: 1.0
   confidence: 0.4
   class_id: 15
