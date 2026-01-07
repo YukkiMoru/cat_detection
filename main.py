@@ -158,7 +158,12 @@ class CatDetector:
 
     def run(self):
         logger.info(f"Starting camera {self.cfg.camera_id}...")
-        self.cap = cv2.VideoCapture(self.cfg.camera_id, cv2.CAP_DSHOW)
+        
+        # OS判定: Windowsの場合はDSHOW、それ以外(Linux/Mac)はデフォルトを使用
+        if sys.platform == "win32":
+            self.cap = cv2.VideoCapture(self.cfg.camera_id, cv2.CAP_DSHOW)
+        else:
+            self.cap = cv2.VideoCapture(self.cfg.camera_id)
 
         # カメラが開けているか確認
         if not self.cap.isOpened():
