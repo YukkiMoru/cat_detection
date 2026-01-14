@@ -2,256 +2,170 @@ import cv2
 import time
 import requests
 import threading
-import yaml
 import logging
 import signal
 import sys
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from ultralytics import YOLO
 
-# ロギング設定: タイムスタンプ付きでログを表示
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
+# ログ設定
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+running = True
 
-class Config:
-    """設定を管理するクラス"""
-    def __init__(self, config_path="config.yml"):
-        self.config = self._load_config(config_path)
+# --- 設定値 ---
+HEADLESS = False       # 画面非表示
+LOW_POWER = True       # 省電力モード
+CAMERA_ID = 0
+FPS = 1
+# MODEL_PATH = 'yolo11n.pt'
+MODEL_PATH = 'yolo26n.pt'
+CONFIDENCE = 0.4
+CLASS_ID = 15          # 15: cat
+MOTION_THRESH = 500
+DURATION_THRESH = 3.0  # 検知持続時間
+RESET_THRESH = 1.0     # リセット時間
+
+def get_webhook_url():
+    """Webhook URLをファイルから読み込む"""
+    try:
+        return Path(".secrets/DWU").read_text(encoding='utf-8').strip()
+    except:
+        return ""
+
+def send_notification(url, frame):
+    """画像付きでDiscordに通知を送る"""
+    if not url or not url.startswith("http"): return
+
+    success, img = cv2.imencode('.jpg', frame)
+    if not success: return
+    
+    files = {'file': ('cat.jpg', img.tobytes(), 'image/jpeg')}
+    ts = datetime.now(timezone(timedelta(hours=9))).strftime('%H:%M:%S')
+    data = {"content": f"[{ts}] 猫検出！🐈"}
+
+    def _post():
+        try: requests.post(url, data=data, files=files, timeout=10)
+        except Exception as e: logging.error(f"通知エラー: {e}")
+    
+    threading.Thread(target=_post, daemon=True).start()
+
+def check_motion(current_frame, prev_gray):
+    """動きがあるかチェック"""
+    # 省電力なら縮小
+    frame = current_frame
+    thresh = MOTION_THRESH
+    if LOW_POWER:
+        frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
+        thresh *= 0.25
+
+    gray = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (21, 21), 0)
+    
+    if prev_gray is None: return True, gray # 初回は動いたことにする
+    if gray.shape != prev_gray.shape: return True, gray
+
+    delta = cv2.absdiff(prev_gray, gray)
+    diff_score = cv2.countNonZero(cv2.threshold(delta, 25, 255, cv2.THRESH_BINARY)[1])
+    
+    return diff_score >= thresh, gray
+
+def signal_handler(signum, frame):
+    global running
+    running = False
+
+def main():
+    global running
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    logging.info("起動中...")
+    webhook_url = get_webhook_url()
+    
+    # モデルとカメラの準備
+    try: model = YOLO(MODEL_PATH)
+    except: return logging.error("モデルが見つかりません")
+
+    cap = cv2.VideoCapture(CAMERA_ID, cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY)
+    if not cap.isOpened(): return logging.error("カメラが開けません")
+
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+    
+    # 状態管理用変数
+    prev_gray = None
+    start_time = None
+    last_seen = 0
+    notified = False
+    best_frame = None
+    max_conf = 0.0
+    target_interval = 1.0 / FPS
+
+    logging.info("監視開始 (Ctrl+Cで停止)")
+
+    while running and cap.isOpened():
+        loop_start = time.time()
         
-        # App settings
-        self.headless = self._get('app.headless', False)
+        ret, frame = cap.read()
+        if not ret:
+            time.sleep(0.1); continue
+
+        # 1. モーション検知
+        is_moving, prev_gray = check_motion(frame, prev_gray)
         
-        # Discord settings
-        self.webhook_url = self._load_webhook_url()
-        
-        # Camera settings
-        self.camera_id = self._get('camera.id', 0)
-        self.width = self._get('camera.width', 320)
-        self.height = self._get('camera.height', 240)
-        self.fps = self._get('camera.fps', 2)
-        
-        # Detection settings
-        self.model_path = self._get('detection.model_path', 'yolov11n.pt')
-        self.duration_threshold = self._get('detection.duration_threshold', 3.0)
-        self.reset_threshold = self._get('detection.reset_threshold', 1.0)
-        self.confidence = self._get('detection.confidence', 0.4)
-        self.class_id = self._get('detection.class_id', 15) # 15: cat
-        self.use_motion_filter = self._get('detection.use_motion_filter', True)
-        self.motion_threshold = self._get('detection.motion_threshold', 500)
-        self.debug_motion = self._get('detection.debug_motion', False)
+        # 検出中(start_timeあり)なら動きがなくてもAIチェックを継続する
+        should_check_ai = is_moving or (start_time is not None)
 
-    def _load_config(self, path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f)
-        except Exception as e:
-            logger.warning(f"Config load failed: {e}. Using defaults.")
-            return {}
+        # 2. AI推論
+        detected = False
+        results = []
+        if should_check_ai:
+            results = model(frame, classes=[CLASS_ID], conf=CONFIDENCE, verbose=False)
+            if results and results[0].boxes:
+                detected = True
 
-    def _get(self, key, default):
-        """ドット区切りのキーで設定値を取得"""
-        v = self.config
-        for k in key.split('.'):
-            if isinstance(v, dict):
-                v = v.get(k)
-            else:
-                return default
-        return v if v is not None else default
+        now = time.time()
 
-    def _load_webhook_url(self):
-        path = self._get('discord.webhook_url_file', ".secrets/DWU")
-        try:
-            return Path(path).read_text(encoding='utf-8').strip()
-        except Exception:
-            logger.warning("Webhook URL file not found or unreadable. Notifications disabled.")
-            return ""
-
-class CatDetector:
-    """猫検出アプリケーションのメインクラス"""
-    def __init__(self, config: Config):
-        self.cfg = config
-        logger.info(f"Loading YOLO model: {self.cfg.model_path}...")
-        self.model = YOLO(self.cfg.model_path)
-        self.running = True
-        self.cap = None
-        
-        # Detection state
-        self.start_time = None
-        self.last_seen_time = 0
-        self.notified = False
-        self.prev_gray = None
-        self.best_frame = None
-        self.max_confidence = 0.0
-
-        # Signal handling (Ctrl+C で安全に終了するため)
-        signal.signal(signal.SIGINT, self.stop)
-        signal.signal(signal.SIGTERM, self.stop)
-
-    def stop(self, signum=None, frame=None):
-        logger.info("Stopping application...")
-        self.running = False
-
-    def notify(self, frame):
-        """Discordに通知を送る（画像付き）"""
-        if not self.cfg.webhook_url.startswith("http"):
-            return
-
-        # 画像をメモリ上でJPEGにエンコード
-        success, encoded_img = cv2.imencode('.jpg', frame)
-        if not success:
-            logger.error("Failed to encode image for notification")
-            return
-        
-        # マルチパート形式でファイルを準備
-        files = {
-            'file': ('cat.jpg', encoded_img.tobytes(), 'image/jpeg')
-        }
-        
-        ts = datetime.now(timezone(timedelta(hours=9))).strftime('%Y/%m/%d %H:%M:%S')
-        data = {
-            "content": f"@everyone [{ts}] 猫検出！🐈"
-        }
-
-        def _send():
-            try:
-                requests.post(self.cfg.webhook_url, data=data, files=files, timeout=10)
-                logger.info("Notification sent successfully!")
-            except Exception as e:
-                logger.error(f"Failed to send notification: {e}")
-
-        # メインループを止めないように別スレッドで送信
-        threading.Thread(target=_send, daemon=True).start()
-
-    def process_motion(self, frame):
-        """モーション検知フィルター。動きがなければFalseを返す"""
-        if not self.cfg.use_motion_filter:
-            return True
-
-        # グレースケール変換とぼかし
-        gray = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (21, 21), 0)
-        
-        if self.prev_gray is None:
-            self.prev_gray = gray
-            return False
-
-        # フレーム間の差分を計算
-        frame_delta = cv2.absdiff(self.prev_gray, gray)
-        thresh = cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY)[1]
-        score = cv2.countNonZero(thresh)
-        self.prev_gray = gray
-
-        # 動きが閾値以下の場合
-        if score < self.cfg.motion_threshold:
-            if self.cfg.debug_motion and self.start_time is None:
-                logger.debug(f"Motion skip: {score}")
+        # 3. 判定ロジック
+        if detected:
+            last_seen = now
+            conf = results[0].boxes.conf.max().item()
             
-            # すでに検出中の場合(start_timeがある)は、猫がじっとしている可能性があるので
-            # YOLO推論を継続させる（Trueを返す）。検出中でなければスキップ（False）。
-            return self.start_time is not None
-        
-        return True
+            # ベストショット更新
+            if conf > max_conf:
+                max_conf = conf
+                best_frame = frame.copy()
 
-    def run(self):
-        logger.info(f"Starting camera {self.cfg.camera_id}...")
+            if start_time is None:
+                start_time = now
+                logging.info("猫検出開始")
+
+            # 一定時間継続したら通知
+            if not notified and (now - start_time >= DURATION_THRESH):
+                logging.info("通知送信！")
+                img_to_send = best_frame if best_frame is not None else frame
+                send_notification(webhook_url, img_to_send)
+                notified = True
         
-        # OS判定: Windowsの場合はDSHOW、それ以外(Linux/Mac)はデフォルトを使用
-        if sys.platform == "win32":
-            self.cap = cv2.VideoCapture(self.cfg.camera_id, cv2.CAP_DSHOW)
+        # 見失って一定時間経過でリセット
+        elif start_time and (now - last_seen > RESET_THRESH):
+            logging.info("リセット")
+            start_time = None
+            notified = False
+            best_frame = None
+            max_conf = 0.0
+
+        # 4. 表示と待機
+        wait_time = target_interval - (time.time() - loop_start)
+        
+        if not HEADLESS:
+            img = results[0].plot() if detected else frame
+            cv2.imshow("Cat", img)
+            if cv2.waitKey(int(max(1, wait_time * 1000))) & 0xFF == ord('q'):
+                break
         else:
-            self.cap = cv2.VideoCapture(self.cfg.camera_id)
+            if wait_time > 0: time.sleep(wait_time)
 
-        # カメラが開けているか確認
-        if not self.cap.isOpened():
-            logger.error("Failed to open camera. Exiting.")
-            return
-
-        # カメラ設定
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.height)
-        self.cap.set(cv2.CAP_PROP_FPS, self.cfg.fps)
-
-        logger.info("Monitoring started. Press Ctrl+C to stop.")
-
-        try:
-            while self.running and self.cap.isOpened():
-                ret, frame = self.cap.read()
-                if not ret:
-                    logger.warning("Failed to read frame from camera. Retrying...")
-                    time.sleep(0.1)
-                    continue
-
-                # 1. モーション検知チェック
-                should_run_yolo = self.process_motion(frame)
-
-                # 2. YOLO推論
-                results = []
-                if should_run_yolo:
-                    try:
-                        results = self.model(frame, classes=[self.cfg.class_id], conf=self.cfg.confidence, verbose=False)
-                    except Exception as e:
-                        logger.error(f"YOLO inference failed: {e}")
-
-                now = time.time()
-                detected = False
-
-                # 3. 検出判定ロジック
-                if should_run_yolo and results and results[0].boxes:
-                    detected = True
-                    self.last_seen_time = now
-
-                    # ベストショットの更新
-                    current_max_conf = results[0].boxes.conf.max().item()
-                    if current_max_conf > self.max_confidence:
-                        self.max_confidence = current_max_conf
-                        self.best_frame = frame.copy()
-
-                    if self.start_time is None:
-                        self.start_time = now
-                        logger.info("Cat detected (start)")
-
-                    # 継続時間が閾値を超え、かつ未通知の場合
-                    if not self.notified and (now - self.start_time >= self.cfg.duration_threshold):
-                        logger.info(f"Threshold passed ({self.cfg.duration_threshold}s). Sending notification.")
-
-                        # ベストショットがあればそれを送信、なければ現在のフレーム
-                        img_to_send = self.best_frame if self.best_frame is not None else frame
-                        self.notify(img_to_send)
-                        self.notified = True
-
-                # 猫が見えなくなってから一定時間経過したらリセット
-                elif self.start_time and (now - self.last_seen_time > self.cfg.reset_threshold):
-                    logger.info("Cat lost. Resetting state.")
-                    self.start_time = None
-                    self.notified = False
-                    self.best_frame = None
-                    self.max_confidence = 0.0
-
-                # 4. 画面表示（ヘッドレスモードでなければ）
-                if not self.cfg.headless:
-                    # 検出時はバウンディングボックス付き、そうでなければ生のフレームを表示
-                    annotated_frame = results[0].plot() if (should_run_yolo and results) else frame
-                    cv2.imshow("YOLO", annotated_frame)
-
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                        break
-                else:
-                    # ヘッドレス時はCPU負荷を下げるため少し待機
-                    time.sleep(0.01)
-
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}")
-        finally:
-            if self.cap:
-                self.cap.release()
-            cv2.destroyAllWindows()
-            logger.info("Cleanup done.")
+    cap.release()
+    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    config = Config()
-    detector = CatDetector(config)
-    detector.run()
+    main()
