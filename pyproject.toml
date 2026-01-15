@@ -10,3 +10,27 @@ dependencies = [
     "PyYAML",
     "requests",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.11",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors (PEP8準拠チェック)
+    "W",  # pycodestyle warnings
+    "F",  # Pyflakes (未使用変数などの論理エラー)
+    "I",  # isort (importの並び順)
+    "B",  # flake8-bugbear (バグの可能性が高い書き方)
+]
+ignore = [
+    "E501", # 行の長さ違反 (フォーマッターに任せるため無視推奨)
+]
+
+[tool.ruff.format]
+quote-style = "double"
