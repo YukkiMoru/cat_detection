@@ -1,5 +1,6 @@
 from ultralytics import YOLO
 
+
 def main():
     print("モデルをダウンロードしています...")
     # モデルを読み込むだけでなければ自動的にダウンロードされます
