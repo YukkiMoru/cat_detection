@@ -95,7 +95,14 @@ def main():
         logging.error(f"モデルが見つかりません: {e}")
         return
 
-    cap = cv2.VideoCapture(CAMERA_ID, cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY)
+    if sys.platform == "win32":
+        backend = cv2.CAP_DSHOW
+    elif sys.platform.startswith("linux"):
+        backend = cv2.CAP_V4L2
+    else:
+        backend = cv2.CAP_ANY
+
+    cap = cv2.VideoCapture(CAMERA_ID, backend)
     if not cap.isOpened():
         logging.error("カメラが開けません")
         return
