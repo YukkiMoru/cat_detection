@@ -15,16 +15,16 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 running = True
 
 # --- 設定値 ---
-HEADLESS = False       # 画面非表示
-LOW_POWER = True       # 省電力モード
+HEADLESS = True       # 画面非表示
+LOW_POWER = False       # 省電力モード
 CAMERA_ID = 0
-FPS = 3
+FPS = 5
 # MODEL_PATH = 'yolo11n.pt'
 MODEL_PATH = 'yolo26n.pt'
-CONFIDENCE = 0.4
+CONFIDENCE = 0.2
 CLASS_ID = 15          # 15: cat
 MOTION_THRESH = 500
-DURATION_THRESH = 10.0  # 検知持続時間
+DURATION_THRESH = 1.0  # 検知持続時間
 RESET_THRESH = 5.0     # リセット時間
 
 def get_webhook_url():
