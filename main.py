@@ -18,14 +18,14 @@ running = True
 HEADLESS = False       # 画面非表示
 LOW_POWER = True       # 省電力モード
 CAMERA_ID = 0
-FPS = 1
+FPS = 3
 # MODEL_PATH = 'yolo11n.pt'
 MODEL_PATH = 'yolo26n.pt'
 CONFIDENCE = 0.4
 CLASS_ID = 15          # 15: cat
 MOTION_THRESH = 500
-DURATION_THRESH = 3.0  # 検知持続時間
-RESET_THRESH = 1.0     # リセット時間
+DURATION_THRESH = 10.0  # 検知持続時間
+RESET_THRESH = 5.0     # リセット時間
 
 def get_webhook_url():
     """Webhook URLをファイルから読み込む"""
@@ -107,8 +107,8 @@ def main():
         logging.error("カメラが開けません")
         return
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     # 状態管理用変数
     prev_gray = None
