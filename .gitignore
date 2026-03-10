@@ -19,7 +19,7 @@ Thumbs.db
 # Models
 *.pt
 *.pth
-*.onnx
+# *.onnx
 
 # Logs
 *.log
