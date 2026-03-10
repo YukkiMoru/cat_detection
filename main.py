@@ -92,6 +92,7 @@ def main():
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # バッファを1にして遅延（ラグ）を防ぐ
 
     # 状態管理用変数
     start_time = None
@@ -107,6 +108,9 @@ def main():
         while running and cap.isOpened():
             loop_start = time.time()
 
+            # カメラの遅延（ラグ）をソフトウェア的に防ぐため、古いフレームを読み捨てる
+            for _ in range(5):
+                cap.grab()
             ret, frame = cap.read()
             if not ret:
                 time.sleep(0.1)
@@ -117,8 +121,9 @@ def main():
             results = []
 
             try:
+                # imgsz=320 (または160) を指定して推論解像度を下げるとラズパイでの速度が劇的に向上します
                 results = model(
-                    frame, classes=[CLASS_ID], conf=CONFIDENCE, verbose=False
+                    frame, classes=[CLASS_ID], conf=CONFIDENCE, verbose=False, imgsz=320
                 )
             except Exception as e:
                 logging.error(f"モデル推論エラー: {e}")
