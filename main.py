@@ -24,6 +24,7 @@ CLASS_ID = 15  # 15: cat
 DURATION_THRESH = 1.0  # 検知持続時間
 RESET_THRESH = 5.0  # リセット時間
 
+
 def get_webhook_url():
     """Webhook URLをファイルから読み込む"""
     try:
@@ -34,6 +35,7 @@ def get_webhook_url():
     except Exception as e:
         logging.debug(f"Webhook読み込みエラー: {e}")
         return ""
+
 
 def send_notification(url, frame):
     """画像付きでDiscordに通知を送る"""
@@ -71,7 +73,7 @@ def main():
 
     # モデルとカメラの準備
     try:
-        model = YOLO(MODEL_PATH)
+        model = YOLO(MODEL_PATH, task="detect")
     except Exception as e:
         logging.error(f"モデルが見つかりません: {e}")
         return
@@ -184,6 +186,7 @@ def main():
 
     cap.release()
     cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()
