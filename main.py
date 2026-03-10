@@ -10,6 +10,8 @@ import cv2
 import requests
 from ultralytics import YOLO
 
+from inference import apply_preprocess, detect_cat, load_best_params
+
 # ログ設定
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 running = True
@@ -65,32 +67,6 @@ def signal_handler(sig, frame):
 
 
 # ==========================================
-# 推論関数
-# ==========================================
-def detect_cat(model, frame, class_id=15, conf_threshold=0.2, imgsz=640):
-    """
-    YOLO推論を行い、指定クラスの検出結果を返す関数
-    戻り値: (detected(bool), max_conf(float), results(list))
-    """
-    detected = False
-    max_conf = 0.0
-    results = []
-
-    try:
-        results = model(
-            frame, classes=[class_id], conf=conf_threshold, verbose=False, imgsz=imgsz
-        )
-        if results and getattr(results[0], "boxes", None) and len(results[0].boxes) > 0:
-            detected = True
-            conf_val = results[0].boxes.conf.max()
-            max_conf = float(conf_val.item() if hasattr(conf_val, "item") else conf_val)
-    except Exception as e:
-        logging.error(f"モデル推論エラー: {e}")
-
-    return detected, max_conf, results
-
-
-# ==========================================
 
 
 def main():
@@ -99,6 +75,9 @@ def main():
 
     logging.info("起動中...")
     webhook_url = get_webhook_url()
+
+    # Optunaで得た最適前処理パラメータを読み込む（なければデフォルト）
+    best_params = load_best_params()
 
     # モデルとカメラの準備
     try:
@@ -146,13 +125,14 @@ def main():
                 continue
 
             # -----------------------------------
-            # 切り出した関数で推論を実行
+            # 前処理を適用して推論を実行
             # -----------------------------------
+            proc_frame = apply_preprocess(frame, best_params)
             detected, current_conf, results = detect_cat(
                 model=model,
-                frame=frame,
+                frame=proc_frame,
                 class_id=CLASS_ID,
-                conf_threshold=CONFIDENCE,
+                conf_threshold=best_params.get("confidence", CONFIDENCE),
                 imgsz=640,
             )
 

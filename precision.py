@@ -4,7 +4,8 @@ from pathlib import Path
 import cv2
 from ultralytics import YOLO
 
-from main import CLASS_ID, CONFIDENCE, MODEL_PATH, detect_cat
+from inference import apply_preprocess, detect_cat, load_best_params
+from main import CLASS_ID, CONFIDENCE, MODEL_PATH
 
 
 def main():
@@ -40,6 +41,8 @@ def main():
         print(f"モデルのロードに失敗しました: {e}")
         return
 
+    best_params = load_best_params()
+
     print("\n=== 猫がいる画像 (with_cat) の検証開始 ===")
     for file_path in with_cat_dir.iterdir():
         if file_path.suffix.lower() in valid_extensions:
@@ -49,8 +52,13 @@ def main():
 
             # 推論実行（main.py の関数を利用）
             start_time = time.time()
+            proc = apply_preprocess(frame, best_params)
             detected, conf, _ = detect_cat(
-                model, frame, CLASS_ID, CONFIDENCE, imgsz=640
+                model,
+                proc,
+                CLASS_ID,
+                best_params.get("confidence", CONFIDENCE),
+                imgsz=640,
             )
             total_inference_time += time.time() - start_time
             inference_count += 1
@@ -70,8 +78,13 @@ def main():
 
             # 推論実行
             start_time = time.time()
+            proc = apply_preprocess(frame, best_params)
             detected, conf, _ = detect_cat(
-                model, frame, CLASS_ID, CONFIDENCE, imgsz=640
+                model,
+                proc,
+                CLASS_ID,
+                best_params.get("confidence", CONFIDENCE),
+                imgsz=640,
             )
             total_inference_time += time.time() - start_time
             inference_count += 1
