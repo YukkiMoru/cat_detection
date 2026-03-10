@@ -67,7 +67,7 @@ def signal_handler(sig, frame):
 # ==========================================
 # 推論関数
 # ==========================================
-def detect_cat(model, frame, class_id=15, conf_threshold=0.2, imgsz=320):
+def detect_cat(model, frame, class_id=15, conf_threshold=0.2, imgsz=640):
     """
     YOLO推論を行い、指定クラスの検出結果を返す関数
     戻り値: (detected(bool), max_conf(float), results(list))
@@ -153,7 +153,7 @@ def main():
                 frame=frame,
                 class_id=CLASS_ID,
                 conf_threshold=CONFIDENCE,
-                imgsz=320,
+                imgsz=640,
             )
 
             now = time.time()

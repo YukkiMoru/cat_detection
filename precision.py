@@ -50,7 +50,7 @@ def main():
             # 推論実行（main.py の関数を利用）
             start_time = time.time()
             detected, conf, _ = detect_cat(
-                model, frame, CLASS_ID, CONFIDENCE, imgsz=320
+                model, frame, CLASS_ID, CONFIDENCE, imgsz=640
             )
             total_inference_time += time.time() - start_time
             inference_count += 1
@@ -71,7 +71,7 @@ def main():
             # 推論実行
             start_time = time.time()
             detected, conf, _ = detect_cat(
-                model, frame, CLASS_ID, CONFIDENCE, imgsz=320
+                model, frame, CLASS_ID, CONFIDENCE, imgsz=640
             )
             total_inference_time += time.time() - start_time
             inference_count += 1

@@ -11,7 +11,7 @@ def main():
 
     model = YOLO("yolo26n.pt")
     # Raspberry Pi用に推論サイズを320x320に固定してエクスポートします
-    model.export(format="onnx", imgsz=320)
+    model.export(format="onnx", imgsz=640)
     print("ダウンロード完了！")
 
 
