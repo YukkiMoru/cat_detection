@@ -104,7 +104,7 @@ if __name__ == "__main__":
     if not img_path.exists():
         print(f"画像が見つかりません: {img_path}")
     else:
-        model_path = "yolo26n.onnx"
+        model_path = "models/yolo26n.onnx"
         print(f"モデル {model_path} をロードしています...")
         model = YOLO(model_path, task="detect")
 

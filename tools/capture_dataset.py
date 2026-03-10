@@ -7,7 +7,7 @@ import cv2
 
 def main():
     # 保存先ディレクトリの作成
-    save_dir = "dataset/images"
+    save_dir = os.path.join("dataset", "images")
     os.makedirs(save_dir, exist_ok=True)
 
     # カメラの設定

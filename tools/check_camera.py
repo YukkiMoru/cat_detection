@@ -34,7 +34,6 @@ def list_available_cameras(max_check=10):
     print("-" * 30)
     if available_cameras:
         print(f"利用可能なカメラID: {available_cameras}")
-        print("YOLOで使う場合、 source=番号 で指定してください。")
     else:
         print("利用可能なカメラが見つかりませんでした。")
         print("接続を確認するか、libcameraコマンドを試してください。")
