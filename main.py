@@ -64,6 +64,35 @@ def signal_handler(sig, frame):
     running = False
 
 
+# ==========================================
+# 推論関数
+# ==========================================
+def detect_cat(model, frame, class_id=15, conf_threshold=0.2, imgsz=320):
+    """
+    YOLO推論を行い、指定クラスの検出結果を返す関数
+    戻り値: (detected(bool), max_conf(float), results(list))
+    """
+    detected = False
+    max_conf = 0.0
+    results = []
+
+    try:
+        results = model(
+            frame, classes=[class_id], conf=conf_threshold, verbose=False, imgsz=imgsz
+        )
+        if results and getattr(results[0], "boxes", None) and len(results[0].boxes) > 0:
+            detected = True
+            conf_val = results[0].boxes.conf.max()
+            max_conf = float(conf_val.item() if hasattr(conf_val, "item") else conf_val)
+    except Exception as e:
+        logging.error(f"モデル推論エラー: {e}")
+
+    return detected, max_conf, results
+
+
+# ==========================================
+
+
 def main():
     global running
     signal.signal(signal.SIGINT, signal_handler)
@@ -92,7 +121,7 @@ def main():
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # バッファを1にして遅延（ラグ）を防ぐ
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
     # 状態管理用変数
     start_time = None
@@ -108,7 +137,7 @@ def main():
         while running and cap.isOpened():
             loop_start = time.time()
 
-            # カメラの遅延（ラグ）をソフトウェア的に防ぐため、古いフレームを読み捨てる
+            # カメラのラグを防ぐため古いフレームを読み捨てる
             for _ in range(5):
                 cap.grab()
             ret, frame = cap.read()
@@ -116,48 +145,31 @@ def main():
                 time.sleep(0.1)
                 continue
 
-            # AI推論
-            detected = False
-            results = []
-
-            try:
-                # imgsz=320 (または160) を指定して推論解像度を下げるとラズパイでの速度が劇的に向上します
-                results = model(
-                    frame, classes=[CLASS_ID], conf=CONFIDENCE, verbose=False, imgsz=320
-                )
-            except Exception as e:
-                logging.error(f"モデル推論エラー: {e}")
-                results = []
-
-            if (
-                results
-                and getattr(results[0], "boxes", None)
-                and len(results[0].boxes) > 0
-            ):
-                detected = True
+            # -----------------------------------
+            # 切り出した関数で推論を実行
+            # -----------------------------------
+            detected, current_conf, results = detect_cat(
+                model=model,
+                frame=frame,
+                class_id=CLASS_ID,
+                conf_threshold=CONFIDENCE,
+                imgsz=320,
+            )
 
             now = time.time()
 
-            # 3. 判定ロジック
+            # 判定ロジック
             if detected:
                 last_seen = now
-                # conf の安全取得
-                try:
-                    conf_val = results[0].boxes.conf.max()
-                    conf = float(
-                        conf_val.item() if hasattr(conf_val, "item") else conf_val
-                    )
-                except Exception:
-                    conf = 0.0
 
-                # ベストショット更新（オリジナルフレームを保存）
-                if conf > max_conf:
-                    max_conf = conf
+                # ベストショット更新
+                if current_conf > max_conf:
+                    max_conf = current_conf
                     best_frame = frame.copy()
 
                 if start_time is None:
                     start_time = now
-                    logging.info("猫検出開始")
+                    logging.info(f"猫検出開始 (信頼度: {current_conf:.2f})")
 
                 # 一定時間継続したら通知
                 if not notified and (now - start_time >= DURATION_THRESH):
@@ -174,7 +186,7 @@ def main():
                 best_frame = None
                 max_conf = 0.0
 
-            # 4. 表示と待機
+            # 表示と待機
             wait_time = target_interval - (time.time() - loop_start)
 
             if not HEADLESS:
@@ -188,9 +200,6 @@ def main():
     finally:
         cap.release()
         cv2.destroyAllWindows()
-
-    cap.release()
-    cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
