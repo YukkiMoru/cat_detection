@@ -20,6 +20,8 @@ Thumbs.db
 *.pt
 *.pth
 # *.onnx
+models/yolo26n
+models/yolo26s
 
 # Logs
 *.log

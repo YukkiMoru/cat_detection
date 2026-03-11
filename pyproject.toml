@@ -11,6 +11,8 @@ dependencies = [
     "PyYAML",
     "requests",
     "pylint>=4.0.5",
+    "tensorflow>=2.21.0",
+    "mnn>=3.4.1",
 ]
 
 [dependency-groups]
