@@ -1,121 +1,13 @@
 import argparse
-import importlib.machinery
-import importlib.util
 import json
-import site
-import sys
 from pathlib import Path
 
-import cv2
+import optuna
 from ultralytics import YOLO
 
-from inference import VALID_PRESET, apply_preprocess, detect_cat
-from main import CLASS_ID, CONFIDENCE, MODEL_PATH
-
-VALID_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp")
-
-
-def import_optuna_package():
-    """ローカルの optuna.py と衝突しないように site-packages 側を優先して読み込む。"""
-    search_paths = []
-    try:
-        search_paths.extend(site.getsitepackages())
-    except Exception:
-        pass
-
-    try:
-        user_site = site.getusersitepackages()
-        if isinstance(user_site, str) and user_site:
-            search_paths.append(user_site)
-    except Exception:
-        pass
-
-    unique_paths = []
-    seen = set()
-    for path in search_paths:
-        normalized = str(Path(path).resolve())
-        if normalized not in seen:
-            seen.add(normalized)
-            unique_paths.append(path)
-
-    spec = importlib.machinery.PathFinder.find_spec("optuna", unique_paths)
-    if spec is None or spec.loader is None:
-        raise ModuleNotFoundError(
-            "optuna パッケージが見つかりません。`uv add optuna` または `uv sync` を実行してください。"
-        )
-
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["optuna"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def load_images(directory: Path):
-    images = []
-    for path in sorted(directory.iterdir()):
-        if path.suffix.lower() not in VALID_EXTENSIONS:
-            continue
-        frame = cv2.imread(str(path))
-        if frame is None:
-            continue
-        images.append((path.name, frame))
-    return images
-
-
-def evaluate(model, with_cat_images, without_cat_images, params, imgsz):
-    tp = 0
-    fn = 0
-    tn = 0
-    fp = 0
-
-    conf_threshold = params["confidence"]
-
-    for _, frame in with_cat_images:
-        target = apply_preprocess(frame, params)
-        detected, _, _ = detect_cat(
-            model,
-            target,
-            class_id=CLASS_ID,
-            conf_threshold=conf_threshold,
-            imgsz=imgsz,
-        )
-        if detected:
-            tp += 1
-        else:
-            fn += 1
-
-    for _, frame in without_cat_images:
-        target = apply_preprocess(frame, params)
-        detected, _, _ = detect_cat(
-            model,
-            target,
-            class_id=CLASS_ID,
-            conf_threshold=conf_threshold,
-            imgsz=imgsz,
-        )
-        if detected:
-            fp += 1
-        else:
-            tn += 1
-
-    total = tp + tn + fp + fn
-    accuracy = (tp + tn) / total if total else 0.0
-    precision = tp / (tp + fp) if (tp + fp) else 0.0
-    recall = tp / (tp + fn) if (tp + fn) else 0.0
-    f1 = (
-        (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
-    )
-
-    return {
-        "tp": tp,
-        "tn": tn,
-        "fp": fp,
-        "fn": fn,
-        "accuracy": accuracy,
-        "precision": precision,
-        "recall": recall,
-        "f1": f1,
-    }
+from inference import BEST_PARAMS_PATH, VALID_PRESET, load_best_params
+from main import MODEL_PATH
+from precision import evaluate, load_images
 
 
 def build_trial_params(trial):
@@ -132,8 +24,6 @@ def build_trial_params(trial):
 
 
 def main():
-    optuna = import_optuna_package()
-
     parser = argparse.ArgumentParser(
         description="Optunaで前処理パラメータを最適化して猫検出精度を上げる"
     )
@@ -142,7 +32,7 @@ def main():
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("optuna_best_params.json"),
+        default=BEST_PARAMS_PATH,
         help="最適化結果の保存先",
     )
     args = parser.parse_args()
@@ -167,8 +57,7 @@ def main():
     print("モデルをロードしています...")
     model = YOLO(MODEL_PATH, task="detect")
 
-    base_params = VALID_PRESET.copy()
-    base_params["confidence"] = CONFIDENCE
+    base_params = load_best_params()
     base_metrics = evaluate(
         model=model,
         with_cat_images=with_cat_images,
@@ -195,8 +84,14 @@ def main():
         trial.set_user_attr("metrics", metrics)
         return metrics["f1"]
 
+    def stop_when_one(study, trial):
+        if study.best_value is not None and study.best_value >= 0.9999:
+            print("\nF1=1.0に到達したため最適化を停止します。")
+            study.stop()
+
     study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=args.trials)
+    study.enqueue_trial(base_params)
+    study.optimize(objective, n_trials=args.trials, callbacks=[stop_when_one])
 
     best_metrics = study.best_trial.user_attrs["metrics"]
     best_result = {

@@ -7,25 +7,41 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+BEST_PARAMS_PATH = PROJECT_ROOT / "optuna_best_params.json"
+
 VALID_PRESET = {
-    "alpha": 1.3752021028813055,
-    "beta": 40,
-    "gamma": 0.7077427684305686,
+    "alpha": 1.3722136328295176,
+    "beta": 11,
+    "gamma": 0.7402007878577299,
     "use_clahe": True,
-    "clahe_clip": 2.1819227142399846,
-    "clahe_tile": 8,
+    "clahe_clip": 1.2396807530086285,
+    "clahe_tile": 12,
     "blur_ksize": 5,
-    "confidence": 0.4264685958606309,
+    "confidence": 0.12019806141240139,
 }
 
 
-def load_best_params(path: Path = Path("optuna_best_params.json")) -> Dict:
-    if not path.exists():
+def load_best_params(path: Path | None = None) -> Dict:
+    target_path = BEST_PARAMS_PATH if path is None else Path(path)
+    if not target_path.is_absolute():
+        target_path = PROJECT_ROOT / target_path
+
+    if not target_path.exists():
         return VALID_PRESET.copy()
+
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        # best_params may be nested under best_params
-        return data.get("best_params", {}) if isinstance(data, dict) else {}
+        data = json.loads(target_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return VALID_PRESET.copy()
+
+        best_params = data.get("best_params", data)
+        if not isinstance(best_params, dict):
+            return VALID_PRESET.copy()
+
+        merged_params = VALID_PRESET.copy()
+        merged_params.update(best_params)
+        return merged_params
     except Exception:
         return VALID_PRESET.copy()
 
