@@ -10,6 +10,7 @@ dependencies = [
     "ultralytics>=8.3.246",
     "PyYAML",
     "requests",
+    "pylint>=4.0.5",
 ]
 
 [dependency-groups]
