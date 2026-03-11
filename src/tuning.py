@@ -3,10 +3,9 @@ import json
 from pathlib import Path
 
 import optuna
-from ultralytics import YOLO
 
-from inference import BEST_PARAMS_PATH, VALID_PRESET, load_best_params
-from main import MODEL_PATH
+import config
+from inference import CatDetector, load_best_params
 from precision import evaluate, load_images
 
 
@@ -32,7 +31,7 @@ def main():
     parser.add_argument(
         "--output",
         type=Path,
-        default=BEST_PARAMS_PATH,
+        default=config.BEST_PARAMS_PATH,
         help="最適化結果の保存先",
     )
     args = parser.parse_args()
@@ -55,15 +54,14 @@ def main():
         )
 
     print("モデルをロードしています...")
-    model = YOLO(MODEL_PATH, task="detect")
+    detector = CatDetector()
 
     base_params = load_best_params()
     base_metrics = evaluate(
-        model=model,
+        detector=detector,
         with_cat_images=with_cat_images,
         without_cat_images=without_cat_images,
         params=base_params,
-        imgsz=args.imgsz,
     )
     print("\n[Baseline]")
     print(
@@ -74,11 +72,10 @@ def main():
     def objective(trial):
         params = build_trial_params(trial)
         metrics = evaluate(
-            model=model,
+            detector=detector,
             with_cat_images=with_cat_images,
             without_cat_images=without_cat_images,
             params=params,
-            imgsz=args.imgsz,
         )
 
         trial.set_user_attr("metrics", metrics)

@@ -3,10 +3,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import cv2
-from ultralytics import YOLO
 
-from inference import apply_preprocess, detect_cat, load_best_params
-from main import CLASS_ID, CONFIDENCE, MODEL_PATH
+from inference import CatDetector
 
 VALID_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp")
 
@@ -25,11 +23,10 @@ def load_images(directory: Path) -> List[Tuple[str, Any]]:
 
 
 def evaluate(
-    model,
+    detector: CatDetector,
     with_cat_images: List[Tuple[str, Any]],
     without_cat_images: List[Tuple[str, Any]],
-    params: Dict,
-    imgsz: int = 640,
+    params: Dict | None = None,
     verbose: bool = False,
 ) -> Dict:
     """
@@ -38,20 +35,15 @@ def evaluate(
     verbose=True の場合、FN/FP の詳細を標準出力に表示する。
     """
     tp = fn = tn = fp = 0
-    conf_threshold = params.get("confidence", CONFIDENCE)
+    original_params = detector.params.copy()
+    if params is not None:
+        detector.set_params(params)
 
     if verbose:
         print("\n=== 猫がいる画像 (with_cat) の検証開始 ===")
 
     for name, frame in with_cat_images:
-        target = apply_preprocess(frame, params)
-        detected, _, _ = detect_cat(
-            model,
-            target,
-            class_id=CLASS_ID,
-            conf_threshold=conf_threshold,
-            imgsz=imgsz,
-        )
+        detected, _, _ = detector.detect_cat(frame)
         if detected:
             tp += 1
         else:
@@ -63,14 +55,7 @@ def evaluate(
         print("\n=== 猫がいない画像 (without_cat) の検証開始 ===")
 
     for name, frame in without_cat_images:
-        target = apply_preprocess(frame, params)
-        detected, conf, _ = detect_cat(
-            model,
-            target,
-            class_id=CLASS_ID,
-            conf_threshold=conf_threshold,
-            imgsz=imgsz,
-        )
+        detected, conf, _ = detector.detect_cat(frame)
         if detected:
             fp += 1
             if verbose:
@@ -85,6 +70,8 @@ def evaluate(
     f1 = (
         (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
     )
+
+    detector.set_params(original_params)
 
     return {
         "tp": tp,
@@ -112,7 +99,7 @@ def main():
 
     print("モデルのロード中...")
     try:
-        model = YOLO(MODEL_PATH, task="detect")
+        detector = CatDetector()
     except Exception as e:
         print(f"モデルのロードに失敗しました: {e}")
         return
@@ -124,15 +111,11 @@ def main():
         print("\n評価対象の画像が見つかりませんでした。")
         return
 
-    best_params = load_best_params()
-
     start_time = time.time()
     metrics = evaluate(
-        model,
+        detector,
         with_cat_images,
         without_cat_images,
-        best_params,
-        imgsz=640,
         verbose=True,
     )
     total_inference_time = time.time() - start_time

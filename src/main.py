@@ -8,23 +8,13 @@ from pathlib import Path
 
 import cv2
 import requests
-from ultralytics import YOLO
 
-from inference import apply_preprocess, detect_cat, load_best_params
+import config
+from inference import CatDetector
 
 # ログ設定
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 running = True
-
-# --- 設定値 ---
-HEADLESS = False  # 画面非表示
-CAMERA_ID = 0
-FPS = 5
-MODEL_PATH = "models/yolo26n.onnx"
-CONFIDENCE = 0.2
-CLASS_ID = 15  # 15: cat
-DURATION_THRESH = 1.0  # 検知持続時間
-RESET_THRESH = 5.0  # リセット時間
 
 
 def get_webhook_url():
@@ -76,12 +66,9 @@ def main():
     logging.info("起動中...")
     webhook_url = get_webhook_url()
 
-    # Optunaで得た最適前処理パラメータを読み込む（なければデフォルト）
-    best_params = load_best_params()
-
     # モデルとカメラの準備
     try:
-        model = YOLO(MODEL_PATH, task="detect")
+        detector = CatDetector()
     except Exception as e:
         logging.error(f"モデルが見つかりません: {e}")
         return
@@ -93,7 +80,7 @@ def main():
     else:
         backend = cv2.CAP_ANY
 
-    cap = cv2.VideoCapture(CAMERA_ID, backend)
+    cap = cv2.VideoCapture(config.CAMERA_ID, backend)
     if not cap.isOpened():
         logging.error("カメラが開けません")
         return
@@ -108,7 +95,7 @@ def main():
     notified = False
     best_frame = None
     max_conf = 0.0
-    target_interval = 1.0 / FPS
+    target_interval = 1.0 / config.FPS
 
     logging.info("監視開始 (Ctrl+Cで停止)")
 
@@ -127,14 +114,7 @@ def main():
             # -----------------------------------
             # 前処理を適用して推論を実行
             # -----------------------------------
-            proc_frame = apply_preprocess(frame, best_params)
-            detected, current_conf, results = detect_cat(
-                model=model,
-                frame=proc_frame,
-                class_id=CLASS_ID,
-                conf_threshold=best_params.get("confidence", CONFIDENCE),
-                imgsz=640,
-            )
+            detected, current_conf, results = detector.detect_cat(frame)
 
             now = time.time()
 
@@ -152,14 +132,14 @@ def main():
                     logging.info(f"猫検出開始 (信頼度: {current_conf:.2f})")
 
                 # 一定時間継続したら通知
-                if not notified and (now - start_time >= DURATION_THRESH):
+                if not notified and (now - start_time >= config.DURATION_THRESH):
                     logging.info("通知送信！")
                     img_to_send = best_frame if best_frame is not None else frame
                     send_notification(webhook_url, img_to_send)
                     notified = True
 
             # 見失って一定時間経過でリセット
-            elif start_time and (now - last_seen > RESET_THRESH):
+            elif start_time and (now - last_seen > config.RESET_THRESH):
                 logging.info("リセット")
                 start_time = None
                 notified = False
@@ -169,7 +149,7 @@ def main():
             # 表示と待機
             wait_time = target_interval - (time.time() - loop_start)
 
-            if not HEADLESS:
+            if not config.HEADLESS:
                 img = results[0].plot() if detected and results else frame
                 cv2.imshow("Cat", img)
                 if cv2.waitKey(int(max(1, wait_time * 1000))) & 0xFF == ord("q"):
