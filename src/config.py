@@ -6,7 +6,8 @@ BEST_PARAMS_PATH = PROJECT_ROOT / "optuna_best_params.json"
 HEADLESS = False
 CAMERA_ID = 0
 FPS = 5
-MODEL_PATH = PROJECT_ROOT / "models" / "yolo26n.onnx"
+# MODEL_PATH = "models/yolo26n/yolo26n_size320_onnx_fp32.onnx"
+MODEL_PATH = "models/yolo26s/yolo26s_size320_onnx_fp32.onnx"
 CONFIDENCE = 0.2
 CLASS_ID = 15
 IMGSZ = 640
@@ -14,12 +15,12 @@ DURATION_THRESH = 1.0
 RESET_THRESH = 5.0
 
 VALID_PRESET = {
-    "alpha": 1.5,        # コントラスト：1.0〜2.0が一般的
-    "beta": 10,          # 明るさ補正：整数で扱いやすく
-    "gamma": 1.0,        # ガンマ：1.0（等倍）を基準に調整
+    "alpha": 0.9723211351452129,
+    "beta": 3,
+    "gamma": 1.5293564399958632,
     "use_clahe": True,
-    "clahe_clip": 2.0,   # CLAHEの標準：2.0〜4.0が一般的（1.2はかなり弱め）
-    "clahe_tile": 8,     # 8x8分割がOpenCV等のデフォルトで最も一般的
-    "blur_ksize": 5,     # そのまま（ノイズ除去に適切なサイズ）
-    "confidence": 0.5,   # 信頼度：0.5（50%）を基準にするのが定石
+    "clahe_clip": 2.5514849604830268,
+    "clahe_tile": 12,
+    "blur_ksize": 5,
+    "confidence": 0.10770572241125684,
 }

@@ -144,6 +144,7 @@ def render_namespace(
     lines.append("    }")
     return lines
 
+
 def build_mermaid_text() -> str:
     mermaid_lines = [
         "classDiagram",
@@ -152,7 +153,7 @@ def build_mermaid_text() -> str:
         "    classDef tool fill:#dfd,stroke:#333;                 %% ツール系",
         "    classDef main_logic fill:#cef,stroke:#333;           %% メイン実行系",
         "    classDef directory fill:#eee,stroke:#666,stroke-dasharray: 5 5; %% フォルダ系",
-        "    classDef external fill:#5865F2,stroke:#fff,color:#fff,stroke-width:2px; %% 外部サービス（Discord）", # ★追加
+        "    classDef external fill:#5865F2,stroke:#fff,color:#fff,stroke-width:2px; %% 外部サービス（Discord）",  # ★追加
     ]
     styles: list[str] = []
     modules_found: list[str] = []
@@ -187,11 +188,13 @@ def build_mermaid_text() -> str:
             "    }",
         ]
     )
-    styles.extend([
-        "    style dataset directory",
-        "    style models directory",
-        "    style Discord external"
-    ])
+    styles.extend(
+        [
+            "    style dataset directory",
+            "    style models directory",
+            "    style Discord external",
+        ]
+    )
 
     for (src_mod, dst_mod), labels in sorted(relationships.items()):
         if dst_mod not in modules_found or src_mod == dst_mod:
@@ -207,6 +210,7 @@ def build_mermaid_text() -> str:
 
     mermaid_lines.extend(styles)
     return "\n".join(mermaid_lines)
+
 
 def write_mermaid_file(mermaid_text: str) -> None:
     MERMAID_PATH.write_text(mermaid_text + "\n", encoding="utf-8")

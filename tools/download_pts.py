@@ -19,14 +19,19 @@ def main():
 
     # エクスポート設定の全パターン (10パターン)
     export_configs = [
-        {"format": "onnx",   "suffix": "onnx_fp32"},
-        {"format": "onnx",   "suffix": "onnx_fp16",   "half": True},
+        {"format": "onnx", "suffix": "onnx_fp32"},
+        {"format": "onnx", "suffix": "onnx_fp16", "half": True},
         {"format": "tflite", "suffix": "tflite_fp32"},
         {"format": "tflite", "suffix": "tflite_fp16", "half": True},
-        {"format": "tflite", "suffix": "tflite_int8", "int8": True, "data": dataset_yaml},
-        {"format": "mnn",    "suffix": "mnn_fp32"},
-        {"format": "mnn",    "suffix": "mnn_fp16",    "half": True},
-        {"format": "mnn",    "suffix": "mnn_int8",    "int8": True, "data": dataset_yaml},
+        {
+            "format": "tflite",
+            "suffix": "tflite_int8",
+            "int8": True,
+            "data": dataset_yaml,
+        },
+        {"format": "mnn", "suffix": "mnn_fp32"},
+        {"format": "mnn", "suffix": "mnn_fp16", "half": True},
+        {"format": "mnn", "suffix": "mnn_int8", "int8": True, "data": dataset_yaml},
     ]
 
     total_exports = len(base_models) * len(image_sizes) * len(export_configs)
@@ -42,7 +47,7 @@ def main():
             print(f"{base_model_name} をダウンロード/準備中...")
             YOLO(str(original_pt_path))
 
-        model_prefix = original_pt_path.stem # 'yolo26n' や 'yolo26s'
+        model_prefix = original_pt_path.stem  # 'yolo26n' や 'yolo26s'
 
         for imgsz in image_sizes:
             for config in export_configs:
@@ -54,6 +59,13 @@ def main():
 
                 print(f"\n[{current_count}/{total_exports}] 作成中: {target_name} ...")
 
+                # 既にエクスポート済みのファイルがあればスキップ
+                existing_outputs = list(output_dir.glob(f"{target_name}.*"))
+                if existing_outputs:
+                    print(
+                        f"  [スキップ] 既に出力があります: {existing_outputs[0].name}"
+                    )
+                    continue
                 try:
                     # 1. 元の.ptファイルを、目的の名前でコピーする
                     shutil.copy(original_pt_path, temp_pt_path)

@@ -36,3 +36,6 @@ dataset
 docs
 
 custom_diagram.mmd
+
+# optuna best prameters
+best_params

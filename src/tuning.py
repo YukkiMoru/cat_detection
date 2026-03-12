@@ -4,7 +4,6 @@ from pathlib import Path
 
 import optuna
 
-import config
 from inference import CatDetector, load_best_params
 from precision import evaluate, load_images
 
@@ -27,12 +26,12 @@ def main():
         description="Optunaで前処理パラメータを最適化して猫検出精度を上げる"
     )
     parser.add_argument("--trials", type=int, default=30, help="試行回数")
-    parser.add_argument("--imgsz", type=int, default=640, help="推論時の入力サイズ")
+    # --output の代わりに、どのモデルをチューニングするか指定できるように変更
     parser.add_argument(
-        "--output",
+        "--model",
         type=Path,
-        default=config.BEST_PARAMS_PATH,
-        help="最適化結果の保存先",
+        default=None,
+        help="チューニングするモデルのパス (指定しない場合は config.MODEL_PATH)",
     )
     args = parser.parse_args()
 
@@ -54,15 +53,24 @@ def main():
         )
 
     print("モデルをロードしています...")
-    detector = CatDetector()
+    detector = CatDetector(model_path=args.model)
+    model_stem = detector.model_path.stem  # 例: yolo26n_size320_onnx_fp32
+    best_params_dir = Path("best_params")
+    best_params_dir.mkdir(parents=True, exist_ok=True)
+    output_path = best_params_dir / f"{model_stem}.json"
 
-    base_params = load_best_params()
+    print(f"対象モデル: {detector.model_path.name}")
+    print(f"パラメータ保存先: {output_path}")
+
+    base_params = load_best_params(output_path)
+
     base_metrics = evaluate(
         detector=detector,
         with_cat_images=with_cat_images,
         without_cat_images=without_cat_images,
         params=base_params,
     )
+
     print("\n[Baseline]")
     print(
         f"Accuracy={base_metrics['accuracy']:.2%}, Precision={base_metrics['precision']:.2%}, "
@@ -99,7 +107,7 @@ def main():
         "baseline_metrics": base_metrics,
     }
 
-    args.output.write_text(
+    output_path.write_text(
         json.dumps(best_result, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
@@ -111,7 +119,7 @@ def main():
         f"Recall={best_metrics['recall']:.2%}"
     )
     print(f"best_params={study.best_params}")
-    print(f"結果を保存しました: {args.output}")
+    print(f"結果を保存しました: {output_path}")
 
 
 if __name__ == "__main__":

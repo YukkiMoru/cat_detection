@@ -1,9 +1,11 @@
+import argparse
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import cv2
 
+import config
 from inference import CatDetector
 
 VALID_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp")
@@ -86,6 +88,15 @@ def evaluate(
 
 
 def main():
+    parser = argparse.ArgumentParser(description="猫検出モデルの精度を評価する")
+    parser.add_argument(
+        "--model",
+        type=Path,
+        default=None,
+        help="評価するモデルのパス (指定しない場合は config.MODEL_PATH)",
+    )
+    args = parser.parse_args()
+
     dataset_dir = Path("dataset")
     with_cat_dir = dataset_dir / "with_cat"
     without_cat_dir = dataset_dir / "without_cat"
@@ -97,9 +108,21 @@ def main():
         print(f"  - {without_cat_dir}/")
         return
 
-    print("モデルのロード中...")
+    # --- 修正ポイント: モデル名から専用のチューニング済みパラメータを自動で探す ---
+    target_model_path = args.model if args.model else Path(config.MODEL_PATH)
+    model_stem = target_model_path.stem
+    params_path = Path("best_params") / f"{model_stem}.json"
+
+    print(f"モデルのロード中... : {target_model_path.name}")
+    if params_path.exists():
+        print(f"専用パラメータを適用します: {params_path.name}")
+    else:
+        print("専用パラメータが見つからないため、デフォルト設定で評価します。")
+        params_path = None  # Noneを渡すと inference.py 側でデフォルトが使われる
+
     try:
-        detector = CatDetector()
+        # モデルパスとパラメータパスを両方渡して初期化
+        detector = CatDetector(model_path=target_model_path, params_path=params_path)
     except Exception as e:
         print(f"モデルのロードに失敗しました: {e}")
         return
@@ -126,7 +149,7 @@ def main():
     )
 
     print("\n==================================")
-    print("           検証結果レポート           ")
+    print(f"    検証結果レポート ({target_model_path.name})")
     print("==================================")
     print(f"Total Images: {total_images}")
     print("----------------------------------")

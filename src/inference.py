@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -37,9 +38,38 @@ def load_best_params(path: Path | None = None) -> Dict:
 class CatDetector:
     def __init__(self, model_path: Path | None = None, params_path: Path | None = None):
         self.model_path = (
-            Path(model_path) if model_path is not None else config.MODEL_PATH
+            Path(model_path) if model_path is not None else Path(config.MODEL_PATH)
         )
-        self.model = YOLO(str(self.model_path), task="detect")
+
+        # 例: yolo26n_size320_mnn_fp16.mnn -> 320 を抽出
+        match = re.search(r"_size(\d+)_", self.model_path.name)
+        if match:
+            self.imgsz = int(match.group(1))
+            logging.debug(f"ファイル名から推論サイズ {self.imgsz} を検出しました。")
+        else:
+            self.imgsz = config.IMGSZ
+            logging.debug(
+                f"サイズ指定が見つからないため、config.IMGSZ ({self.imgsz}) を使用します。"
+            )
+
+        try:
+            # .pt, .onnx, .mnn いずれもこの1行でロード可能
+            self.model = YOLO(str(self.model_path), task="detect")
+        except Exception as e:
+            logging.error(f"モデルのロードに失敗しました ({self.model_path.name}): {e}")
+            raise
+
+        # --- 改良ポイント: params_path が未指定なら、自分の名前のJSONを自動で探す ---
+        if params_path is None:
+            auto_params_path = Path("best_params") / f"{self.model_path.stem}.json"
+            if auto_params_path.exists():
+                params_path = auto_params_path
+                logging.debug(f"専用パラメータ {params_path.name} を自動検出しました。")
+            else:
+                logging.debug(
+                    "専用パラメータが見つからないためデフォルト設定を使用します。"
+                )
+
         self.params = load_best_params(params_path)
 
     def set_params(self, params: Dict | None = None) -> None:
@@ -101,7 +131,7 @@ class CatDetector:
                 classes=[config.CLASS_ID],
                 conf=conf_threshold,
                 verbose=False,
-                imgsz=config.IMGSZ,
+                imgsz=self.imgsz,
             )
             if (
                 results
@@ -121,19 +151,26 @@ class CatDetector:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
     img_path = Path("dataset/with_cat/P1.jpg")
+
+    # テストとして、エクスポート済みのモデルなどを直接指定して動作確認できます
+    test_model_path = None  # None の場合は config.MODEL_PATH が使われます
 
     if not img_path.exists():
         print(f"画像が見つかりません: {img_path}")
     else:
-        print(f"モデル {config.MODEL_PATH} をロードしています...")
-        detector = CatDetector()
+        print("モデルをロードしています...")
+        detector = CatDetector(model_path=test_model_path)
 
         frame = cv2.imread(str(img_path))
         if frame is None:
             print("画像の読み込みに失敗しました。")
         else:
+            print(f"ロードされたモデル: {detector.model_path.name}")
+            print(f"推論サイズ: {detector.imgsz}")
             print(f"使用パラメータ: {detector.params}")
+
             processed = detector.apply_preprocess(frame)
             detected, max_conf, results = detector.detect_cat(frame)
 
