@@ -22,6 +22,9 @@ Thumbs.db
 models/.cache
 models/yolo26n
 models/yolo26s
+models/yolov5nu
+models/yolov5su
+models/yolov5mu
 
 # Logs
 *.log

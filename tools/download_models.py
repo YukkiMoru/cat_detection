@@ -23,8 +23,11 @@ def main():
         # "yolo26m.pt",  # Medium
         # "yolo26l.pt",  # Large
         # "yolo26x.pt",  # Extra Large
+        "yolov5nu.pt",  # Nano
+        "yolov5su.pt",  # Small
+        "yolov5mu.pt",  # Medium
     ]
-    image_sizes = [640, 320]
+    image_sizes = [640, 320, 256, 192]
 
     # INT8キャリブレーション用のデータセット
     # 指定しないとUltralyticsのデフォルト(coco8.yaml)が使われます
