@@ -7,11 +7,13 @@ from pathlib import Path
 from inference import CatDetector
 from precision import evaluate, load_images
 
+N_RUNS = 5
+
 
 def main():
     print("=== YOLO モデル 一括最適化 & ベンチマーク ===")
 
-    # 1. 準備
+    # 1. 準備 (変更なし)
     current_dir = Path(__file__).parent
     tuning_script = current_dir / "tuning.py"
 
@@ -28,14 +30,8 @@ def main():
     without_cat_images = load_images(without_cat_dir)
     total_images = len(with_cat_images) + len(without_cat_images)
 
-    # 2. モデルの自動探索
+    # 2. モデルの自動探索 (変更なし)
     model_files = list(models_dir.rglob("*.onnx")) + list(models_dir.rglob("*.mnn"))
-    # model_files = [
-    #     model_path
-    #     for model_path in models_dir.rglob("*.mnn")
-    #     if "yolo26n" in model_path.stem or "yolo26s" in model_path.stem
-    #     if "int8" in model_path.stem
-    # ]
     print(f"合計 {len(model_files)} 個のモデルをチェックします。")
 
     results = []
@@ -65,38 +61,60 @@ def main():
         else:
             print("✨ チューニング済みパラメータを適用します。")
 
-        # 3. 最適化された状態で評価
+        # 3. 最適化された状態で評価（★ ここをN回平均に修正）
         try:
             detector = CatDetector(model_path=model_path)
 
-            start_time = time.time()
-            metrics = evaluate(
-                detector, with_cat_images, without_cat_images, verbose=False
-            )
-            total_time = time.time() - start_time
+            total_accuracy = 0.0
+            total_precision = 0.0
+            total_recall = 0.0
+            total_f1 = 0.0
+            total_avg_ms = 0.0
 
-            avg_ms = (total_time / total_images * 1000) if total_images else 0
-            fps = (1000 / avg_ms) if avg_ms else 0
+            print(f"ベンチマークを {N_RUNS} 回実行して平均を計測中...")
+            for _ in range(N_RUNS):
+                start_time = time.time()
+                metrics = evaluate(
+                    detector, with_cat_images, without_cat_images, verbose=False
+                )
+                run_time = time.time() - start_time
+
+                # 1周あたりの1枚推論時間
+                avg_ms_per_run = (run_time / total_images * 1000) if total_images else 0
+
+                total_accuracy += metrics["accuracy"]
+                total_precision += metrics["precision"]
+                total_recall += metrics["recall"]
+                total_f1 += metrics["f1"]
+                total_avg_ms += avg_ms_per_run
+
+            # 平均値の計算
+            avg_accuracy = total_accuracy / N_RUNS
+            avg_precision = total_precision / N_RUNS
+            avg_recall = total_recall / N_RUNS
+            avg_f1 = total_f1 / N_RUNS
+            final_avg_ms = total_avg_ms / N_RUNS
+            final_fps = (1000 / final_avg_ms) if final_avg_ms else 0
 
             results.append(
                 {
                     "Model_Name": model_path.stem,
                     "Format": model_path.suffix.replace(".", "").upper(),
                     "Size": detector.imgsz,
-                    "Accuracy": f"{metrics['accuracy']:.2%}",
-                    "Precision": f"{metrics['precision']:.2%}",
-                    "Recall": f"{metrics['recall']:.2%}",
-                    "F1_Score": f"{metrics['f1']:.2%}",
-                    "Avg_Time(ms)": f"{avg_ms:.1f}",
-                    "FPS": f"{fps:.1f}",
+                    "Accuracy": f"{avg_accuracy:.2%}",
+                    "Precision": f"{avg_precision:.2%}",
+                    "Recall": f"{avg_recall:.2%}",
+                    "F1_Score": f"{avg_f1:.2%}",
+                    "Avg_Time(ms)": f"{final_avg_ms:.1f}",
+                    "FPS": f"{final_fps:.1f}",
                 }
             )
-            print(f"📈 評価結果: F1={metrics['f1']:.2%}, FPS={fps:.1f}")
+            print(f"📈 評価結果({N_RUNS}回平均): F1={avg_f1:.2%}, FPS={final_fps:.1f}")
 
         except Exception as e:
             print(f"❌ エラー発生: {e}")
 
-    # 4. ソートと保存
+    # 4. ソートと保存 (変更なし)
     if not results:
         print("有効な結果が得られませんでした。")
         return
@@ -112,7 +130,7 @@ def main():
         writer.writerows(results)
 
     print("\n" + "=" * 45)
-    print("             🏆 最終ベンチマーク結果 🏆")
+    print("            🏆 最終ベンチマーク結果 🏆")
     print("=" * 45)
     for i, res in enumerate(results[:5], 1):
         print(f"{i}位: {res['Model_Name']}")
