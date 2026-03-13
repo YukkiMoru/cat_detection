@@ -32,6 +32,8 @@ def main():
 
     # 2. モデルの自動探索 (変更なし)
     model_files = list(models_dir.rglob("*.onnx")) + list(models_dir.rglob("*.mnn"))
+    # models/.cache を除外
+    model_files = [f for f in model_files if ".cache" not in str(f)]
     print(f"合計 {len(model_files)} 個のモデルをチェックします。")
 
     results = []
