@@ -1,3 +1,7 @@
+#!/usr/bin/env python
+# uv run tools/capture_dataset.py
+# camera -> dataset/images/*.jpg
+
 import os
 import sys
 import time

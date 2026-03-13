@@ -1,3 +1,7 @@
+#!/usr/bin/env python
+# uv run tools/create_mermaid.py
+# src/* or tools/* -> custom_diagram.mmd
+
 import ast
 import shutil
 import subprocess

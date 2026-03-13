@@ -12,7 +12,6 @@ import requests
 import config
 from inference import CatDetector
 
-# ログ設定
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 running = True
 
@@ -51,12 +50,9 @@ def send_notification(url, frame):
     threading.Thread(target=_post, daemon=True).start()
 
 
-def signal_handler(sig, frame):
+def signal_handler():
     global running
     running = False
-
-
-# ==========================================
 
 
 def main():
@@ -111,9 +107,6 @@ def main():
                 time.sleep(0.1)
                 continue
 
-            # -----------------------------------
-            # 前処理を適用して推論を実行
-            # -----------------------------------
             detected, current_conf, results = detector.detect_cat(frame)
 
             now = time.time()

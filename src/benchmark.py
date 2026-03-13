@@ -1,6 +1,6 @@
 import csv
 import subprocess
-import sys  # 実行中のPythonパスを取得するために追加
+import sys
 import time
 from pathlib import Path
 
@@ -12,7 +12,7 @@ def main():
     print("=== YOLO モデル 一括最適化 & ベンチマーク ===")
 
     # 1. 準備
-    current_dir = Path(__file__).parent  # このファイルがあるディレクトリ (src)
+    current_dir = Path(__file__).parent
     tuning_script = current_dir / "tuning.py"
 
     models_dir = Path("models")
@@ -47,7 +47,6 @@ def main():
         if not params_json.exists():
             print("🔍 パラメータが見つかりません。最適化を開始します...")
             try:
-                # sys.executable を使うことで、仮想環境(venv)のPythonを確実に引き継ぎます
                 subprocess.run(
                     [
                         sys.executable,

@@ -1,3 +1,7 @@
+#!/usr/bin/env python
+# uv run tools/capture_dataset.py
+# internet -> models/yolo26n.pt, yolo26s.pt -> models/yolo26n/*, yolo26s/*
+
 import shutil
 from pathlib import Path
 

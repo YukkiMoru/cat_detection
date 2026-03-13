@@ -1,3 +1,7 @@
+#!/usr/bin/env python
+# uv run tools/check_camera.py
+# camera -> avaibable camera
+
 import cv2
 
 
@@ -24,7 +28,9 @@ def list_available_cameras(max_check=10):
                 print(f"[OK] Camera Index {index}: Resolution={w}x{h}, FPS={fps}")
                 available_cameras.append(index)
             else:
-                print(f"[Warning] Camera Index {index}: Opened but failed to read frame.")
+                print(
+                    f"[Warning] Camera Index {index}: Opened but failed to read frame."
+                )
 
             cap.release()
         else:
@@ -37,6 +43,7 @@ def list_available_cameras(max_check=10):
     else:
         print("利用可能なカメラが見つかりませんでした。")
         print("接続を確認するか、libcameraコマンドを試してください。")
+
 
 if __name__ == "__main__":
     list_available_cameras()
