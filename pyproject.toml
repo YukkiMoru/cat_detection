@@ -13,6 +13,8 @@ dependencies = [
     "pylint>=4.0.5",
     "tensorflow>=2.21.0",
     "mnn>=3.4.1",
+    "pandas>=2.3.3",
+    "seaborn>=0.13.2",
 ]
 
 [dependency-groups]

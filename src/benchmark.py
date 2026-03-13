@@ -30,6 +30,12 @@ def main():
 
     # 2. モデルの自動探索
     model_files = list(models_dir.rglob("*.onnx")) + list(models_dir.rglob("*.mnn"))
+    # model_files = [
+    #     model_path
+    #     for model_path in models_dir.rglob("*.mnn")
+    #     if "yolo26n" in model_path.stem or "yolo26s" in model_path.stem
+    #     if "int8" in model_path.stem
+    # ]
     print(f"合計 {len(model_files)} 個のモデルをチェックします。")
 
     results = []

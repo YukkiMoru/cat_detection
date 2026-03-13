@@ -19,7 +19,7 @@ Thumbs.db
 # Models
 *.pt
 *.pth
-# *.onnx
+models/.cache
 models/yolo26n
 models/yolo26s
 
@@ -39,3 +39,9 @@ custom_diagram.mmd
 
 # optuna best prameters
 best_params
+
+# Calibration data for INT8 quantization
+calibration_image_sample_data_20x128x128x3_float32.npy
+
+# benchmark result
+benchmark_results.csv
