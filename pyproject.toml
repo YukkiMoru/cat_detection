@@ -15,6 +15,13 @@ dependencies = [
     "mnn>=3.4.1",
     "pandas>=2.3.3",
     "seaborn>=0.13.2",
+    "onnx-graphsurgeon==0.5.8",
+    "onnx2tf==1.28.8",
+    "onnxruntime==1.24.3",
+    "onnxslim==0.1.87",
+    "pnnx==20260112",
+    "sng4onnx==2.0.1",
+    "tf-keras==2.15.0",
 ]
 
 [dependency-groups]
