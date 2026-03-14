@@ -4,8 +4,10 @@ import sys
 import time
 from pathlib import Path
 
+import cv2
+
 from inference import CatDetector
-from precision import evaluate, load_images
+from precision import evaluate, load_image_paths
 
 N_RUNS = 5
 
@@ -26,8 +28,8 @@ def main():
     without_cat_dir = dataset_dir / "without_cat"
 
     print("画像を読み込んでいます...")
-    with_cat_images = load_images(with_cat_dir)
-    without_cat_images = load_images(without_cat_dir)
+    with_cat_images = load_image_paths(with_cat_dir)
+    without_cat_images = load_image_paths(without_cat_dir)
     total_images = len(with_cat_images) + len(without_cat_images)
 
     # 2. モデルの自動探索 (変更なし)
@@ -67,28 +69,51 @@ def main():
         try:
             detector = CatDetector(model_path=model_path)
 
+            # ウォームアップ（初回ロード/キャッシュ生成を計測に含めない）
+            warmup_path = (with_cat_images[0] if with_cat_images else None) or (
+                without_cat_images[0] if without_cat_images else None
+            )
+            if warmup_path is not None:
+                warmup_frame = cv2.imread(str(warmup_path))
+                if warmup_frame is not None:
+                    try:
+                        detector.detect_cat(warmup_frame)
+                    except Exception:
+                        pass
+
             total_accuracy = 0.0
             total_precision = 0.0
             total_recall = 0.0
             total_f1 = 0.0
             total_avg_ms = 0.0
+            total_avg_io_ms = 0.0
 
             print(f"ベンチマークを {N_RUNS} 回実行して平均を計測中...")
             for _ in range(N_RUNS):
-                start_time = time.time()
                 metrics = evaluate(
-                    detector, with_cat_images, without_cat_images, verbose=False
+                    detector,
+                    with_cat_images,
+                    without_cat_images,
+                    verbose=False,
+                    warmup=False,
                 )
-                run_time = time.time() - start_time
 
-                # 1周あたりの1枚推論時間
-                avg_ms_per_run = (run_time / total_images * 1000) if total_images else 0
+                # 1周あたりの1枚推論時間（前処理+推論のみ）
+                avg_ms_per_run = (
+                    (metrics["inference_time_sec"] / total_images * 1000)
+                    if total_images
+                    else 0
+                )
+                avg_io_ms_per_run = (
+                    (metrics["io_time_sec"] / total_images * 1000) if total_images else 0
+                )
 
                 total_accuracy += metrics["accuracy"]
                 total_precision += metrics["precision"]
                 total_recall += metrics["recall"]
                 total_f1 += metrics["f1"]
                 total_avg_ms += avg_ms_per_run
+                total_avg_io_ms += avg_io_ms_per_run
 
             # 平均値の計算
             avg_accuracy = total_accuracy / N_RUNS
@@ -96,6 +121,7 @@ def main():
             avg_recall = total_recall / N_RUNS
             avg_f1 = total_f1 / N_RUNS
             final_avg_ms = total_avg_ms / N_RUNS
+            final_avg_io_ms = total_avg_io_ms / N_RUNS
             final_fps = (1000 / final_avg_ms) if final_avg_ms else 0
 
             results.append(
@@ -108,6 +134,7 @@ def main():
                     "Recall": f"{avg_recall:.2%}",
                     "F1_Score": f"{avg_f1:.2%}",
                     "Avg_Time(ms)": f"{final_avg_ms:.1f}",
+                    "Avg_IO(ms)": f"{final_avg_io_ms:.1f}",
                     "FPS": f"{final_fps:.1f}",
                 }
             )

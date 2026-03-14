@@ -6,7 +6,7 @@ BEST_PARAMS_PATH = PROJECT_ROOT / "optuna_best_params.json"
 HEADLESS = False
 CAMERA_ID = 0
 FPS = 5
-MODEL_PATH = "models/yolo26n/yolo26n_size640_mnn_fp32.mnn"
+MODEL_PATH = "models/yolo26n/yolo26n_size320x192_mnn_fp16.mnn"
 CONFIDENCE = 0.2
 CLASS_ID = 15
 IMGSZ = 640
@@ -14,12 +14,12 @@ DURATION_THRESH = 1.0
 RESET_THRESH = 5.0
 
 VALID_PRESET = {
-    "alpha": 0.9723211351452129,
-    "beta": 3,
-    "gamma": 1.5293564399958632,
-    "use_clahe": True,
-    "clahe_clip": 2.5514849604830268,
-    "clahe_tile": 12,
-    "blur_ksize": 5,
-    "confidence": 0.10770572241125684,
+    "alpha": 1.3526395510689064,
+    "beta": -3,
+    "gamma": 0.90653121009541,
+    "use_clahe": False,
+    "clahe_clip": 2.7435010513797966,
+    "clahe_tile": 4,
+    "blur_ksize": 3,
+    "confidence": 0.25984842563217536,
 }

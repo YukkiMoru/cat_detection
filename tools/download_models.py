@@ -20,14 +20,20 @@ def main():
     base_models = [
         "yolo26n.pt",  # Nano
         "yolo26s.pt",  # Small
-        # "yolo26m.pt",  # Medium
+        "yolo26m.pt",  # Medium
         # "yolo26l.pt",  # Large
         # "yolo26x.pt",  # Extra Large
         "yolov5nu.pt",  # Nano
         "yolov5su.pt",  # Small
         "yolov5mu.pt",  # Medium
     ]
-    image_sizes = [640, 320, 256, 192]
+    # 16:9比率を維持したサイズ（[高さ, 幅]）
+    image_sizes = [
+        (384, 640), # 640基準
+        (192, 320), # 320基準
+        (160, 256), # 256基準
+        (128, 192), # 192基準
+    ]
 
     # INT8キャリブレーション用のデータセット
     # 指定しないとUltralyticsのデフォルト(coco8.yaml)が使われます
@@ -59,10 +65,13 @@ def main():
             YOLO(str(original_pt_path))
 
         for imgsz in image_sizes:
+            h, w = imgsz  # 分解
             for config in export_configs:
                 current_count += 1
 
-                target_name = f"{model_prefix}_size{imgsz}_{config['suffix']}"
+                # ファイル名に高さと幅がわかるように名前を調整
+                # 例: yolo26n_size640x384_mnn_fp16
+                target_name = f"{model_prefix}_size{w}x{h}_{config['suffix']}"
                 temp_pt_path = model_output_dir / f"{target_name}.pt"
 
                 print(
@@ -90,7 +99,7 @@ def main():
                     # 3. 引数を組み立ててエクスポート
                     export_args = {
                         "format": config["format"],
-                        "imgsz": imgsz,
+                        "imgsz": [h, w],  # リスト形式で渡す
                         "half": config.get("half", False),
                         "int8": config.get("int8", False),
                     }
