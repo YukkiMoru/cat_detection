@@ -18,11 +18,18 @@ def plot_benchmark_results(csv_path):
     df["FPS"] = df["FPS"].astype(float)
     df["F1"] = df["F1_Score"].str.rstrip("%").astype(float)
     df["Model"] = df["Model_Name"].str.split("_").str[0]
-    df["Type"] = df["Model_Name"].str.split("_").str[-1].str.upper()
+    import re
+
+    # _fp32_/_fp16_/_int8_ などを抽出しType列にする
+    def extract_type(name):
+        m = re.search(r"_(fp32|fp16|int8)_", name, re.IGNORECASE)
+        return m.group(1).upper() if m else "OTHER"
+
+    df["Type"] = df["Model_Name"].apply(extract_type)
 
     sns.set_theme(style="whitegrid")
     plt.figure(figsize=(11, 7))
-    palette = {"MNN": "tab:red", "ONNX": "tab:blue"}
+    palette = {"MNN": "tab:red", "ONNX": "tab:blue", "OPENVINO": "gray"}
     order = {"FP32": 0, "FP16": 1, "INT8": 2}
 
     # 1. 軌跡（線）: 順序をソートして描画
@@ -59,7 +66,7 @@ def plot_benchmark_results(csv_path):
             r["Type"],
             fontsize=8,
             alpha=0.7,
-            bbox=dict(fc="w", ec="none", alpha=0.5),
+            bbox=dict(fc="w", ec="none", alpha=0.0),
         )
 
     plt.title("Benchmark Result", fontweight="bold")

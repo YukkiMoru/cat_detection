@@ -29,10 +29,10 @@ def main():
     ]
     # 16:9比率を維持したサイズ（[高さ, 幅]）
     image_sizes = [
-        (384, 640), # 640基準
-        (192, 320), # 320基準
-        (160, 256), # 256基準
-        (128, 192), # 192基準
+        (384, 640),  # 640基準
+        (192, 320),  # 320基準
+        (160, 256),  # 256基準
+        (128, 192),  # 192基準
     ]
 
     # INT8キャリブレーション用のデータセット
@@ -41,9 +41,19 @@ def main():
 
     # エクスポート設定の全パターン
     export_configs = [
+        # MNN形式
         {"format": "mnn", "suffix": "mnn_fp32"},
         {"format": "mnn", "suffix": "mnn_fp16", "half": True},
         {"format": "mnn", "suffix": "mnn_int8", "int8": True, "data": dataset_yaml},
+        # OpenVINO形式
+        {"format": "openvino", "suffix": "openvino_fp32"},
+        {"format": "openvino", "suffix": "openvino_fp16", "half": True},
+        # {
+        #     "format": "openvino",
+        #     "suffix": "openvino_int8",
+        #     "int8": True,
+        #     "data": dataset_yaml,
+        # },
     ]
 
     total_exports = len(base_models) * len(image_sizes) * len(export_configs)
@@ -79,15 +89,26 @@ def main():
                 )
 
                 # 既にエクスポート済みの目的のファイルがあるか確認
-                target_ext = f".{config['format']}"  # 例: .mnn
-                existing_outputs = list(
-                    model_output_dir.glob(f"{target_name}{target_ext}")
-                )
-                if existing_outputs:
-                    print(
-                        f"  [スキップ] 既に出力があります: {existing_outputs[0].name}"
+                if config["format"] == "openvino":
+                    openvino_dir = model_output_dir / f"{target_name}_openvino_model"
+                    if openvino_dir.exists() and list(openvino_dir.glob("*.xml")):
+                        print(
+                            f"  [スキップ] 既にOpenVINO出力があります: {openvino_dir.name}"
+                        )
+                        continue
+                    target_ext = (
+                        ""  # openvinoはディレクトリ出力のため拡張子で判定しない
                     )
-                    continue
+                else:
+                    target_ext = f".{config['format']}"  # 例: .mnn
+                    existing_outputs = list(
+                        model_output_dir.glob(f"{target_name}{target_ext}")
+                    )
+                    if existing_outputs:
+                        print(
+                            f"  [スキップ] 既に出力があります: {existing_outputs[0].name}"
+                        )
+                        continue
 
                 try:
                     # 1. 元の.ptファイルを、目的の名前でコピーする
@@ -120,7 +141,8 @@ def main():
                             continue
 
                         # 最終的に欲しい拡張子（例: .mnn）以外は .cache フォルダへ移動
-                        if generated_file.suffix != target_ext:
+                        # openvinoはディレクトリ出力なので、このループ対象(拡張子付き)は全て中間生成物として扱う
+                        if (not target_ext) or (generated_file.suffix != target_ext):
                             try:
                                 dest_path = cache_dir / generated_file.name
                                 # 同名ファイルがキャッシュ内に存在する場合は上書きのため事前削除

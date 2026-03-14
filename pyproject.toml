@@ -22,6 +22,7 @@ dependencies = [
     "pnnx==20260112",
     "sng4onnx==2.0.1",
     "tf-keras==2.15.0",
+    "openvino==2026.0.0",
 ]
 
 [dependency-groups]

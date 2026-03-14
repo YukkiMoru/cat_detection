@@ -1,7 +1,6 @@
 import csv
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import cv2
@@ -33,7 +32,18 @@ def main():
     total_images = len(with_cat_images) + len(without_cat_images)
 
     # 2. モデルの自動探索 (変更なし)
-    model_files = list(models_dir.rglob("*.onnx")) + list(models_dir.rglob("*.mnn"))
+    onnx_mnn_files = list(models_dir.rglob("*.onnx")) + list(models_dir.rglob("*.mnn"))
+    # OpenVINO は「フォルダ(= exported_model)」として存在するケースがある
+    openvino_dirs = [
+        p
+        for p in models_dir.rglob("*openvino_model")
+        if p.is_dir() and any(p.glob("*.xml")) and any(p.glob("*.bin"))
+    ]
+
+    # テスト用途: ここをコメントアウトで切り替える
+    model_files = onnx_mnn_files + openvino_dirs  # 全部
+    # model_files = openvino_dirs  # OpenVINO だけ
+    # model_files = onnx_mnn_files  # ONNX/MNN だけ
     # models/.cache を除外
     model_files = [f for f in model_files if ".cache" not in str(f)]
     print(f"合計 {len(model_files)} 個のモデルをチェックします。")
@@ -105,7 +115,9 @@ def main():
                     else 0
                 )
                 avg_io_ms_per_run = (
-                    (metrics["io_time_sec"] / total_images * 1000) if total_images else 0
+                    (metrics["io_time_sec"] / total_images * 1000)
+                    if total_images
+                    else 0
                 )
 
                 total_accuracy += metrics["accuracy"]
@@ -127,7 +139,11 @@ def main():
             results.append(
                 {
                     "Model_Name": model_path.stem,
-                    "Format": model_path.suffix.replace(".", "").upper(),
+                    "Format": (
+                        "OPENVINO"
+                        if model_path.is_dir()
+                        else model_path.suffix.replace(".", "").upper()
+                    ),
                     "Size": detector.imgsz,
                     "Accuracy": f"{avg_accuracy:.2%}",
                     "Precision": f"{avg_precision:.2%}",
