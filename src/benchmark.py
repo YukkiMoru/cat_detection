@@ -1,4 +1,5 @@
 import csv
+import gc
 import subprocess
 import sys
 from pathlib import Path
@@ -236,6 +237,11 @@ def main():
                 f.write(f"{model_path.stem}\n")
             error_models.add(model_path.stem)
             print(f"📝 {error_log_path.name} にエラーモデルとして記録しました。")
+
+        finally:
+            if "detector" in locals():
+                del detector
+            gc.collect()
 
     # 5. 最終結果の表示
     if not results:
