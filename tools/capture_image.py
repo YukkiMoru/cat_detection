@@ -1,75 +1,72 @@
 #!/usr/bin/env python
 # uv run tools/capture_dataset.py
-# camera -> dataset/images/*.jpg
 
 import os
 import sys
-import time
 
 import cv2
 
 
 def main():
-    # 保存先ディレクトリの作成
-    save_dir = os.path.join("dataset", "images")
-    os.makedirs(save_dir, exist_ok=True)
+    # ベースディレクトリの設定
+    base_dir = "dataset"
+    # サブディレクトリ（ラベル名）の定義
+    classes = {"cat": "猫あり", "no_cat": "猫なし"}
+
+    for label in classes.keys():
+        os.makedirs(os.path.join(base_dir, label), exist_ok=True)
 
     # カメラの設定
     CAMERA_ID = 0
+    backend = cv2.CAP_ANY
     if sys.platform == "win32":
         backend = cv2.CAP_DSHOW
     elif sys.platform.startswith("linux"):
         backend = cv2.CAP_V4L2
-    else:
-        backend = cv2.CAP_ANY
 
     cap = cv2.VideoCapture(CAMERA_ID, backend)
     if not cap.isOpened():
         print("カメラが開けません")
         return
 
-    # 解像度設定
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
     print("====================================")
-    print("データセット収集ツール起動")
-    print(f"保存先: {save_dir}")
-    print("[Space]キー / [Enter]キー: 写真を撮影")
-    print("[Q]キー / [Esc]キー: 終了")
+    print("🐾 猫データセット収集ツール 🐾")
+    print(f"保存先: {base_dir}/")
+    print("[C]キー: 「猫あり(cat)」として保存")
+    print("[N]キー: 「猫なし(no_cat)」として保存")
+    print("[Q]キー: 終了")
     print("====================================")
-
-    count = 0
-    # 既存のファイルから開始番号を決定
-    existing_files = [
-        f for f in os.listdir(save_dir) if f.startswith("img_") and f.endswith(".jpg")
-    ]
-    if existing_files:
-        indices = [int(f.split("_")[1].split(".")[0]) for f in existing_files]
-        count = max(indices) + 1
 
     try:
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
-                time.sleep(0.1)
                 continue
 
-            # 画面表示
+            # プレビュー表示
             cv2.imshow("Dataset Collector", frame)
-
-            # キー入力待ち
             key = cv2.waitKey(1) & 0xFF
 
-            # スペースキーまたはエンターキーで撮影
-            if key == ord(" ") or key == 13:
-                filename = os.path.join(save_dir, f"img_{count:04d}.jpg")
+            # 保存処理の関数化（カウントを自動計算して保存）
+            def save_image(label_name):
+                target_dir = os.path.join(base_dir, label_name)
+                # 既存ファイル数から番号を決定
+                existing_count = len(
+                    [f for f in os.listdir(target_dir) if f.endswith(".jpg")]
+                )
+                filename = os.path.join(
+                    target_dir, f"{label_name}_{existing_count:04d}.jpg"
+                )
                 cv2.imwrite(filename, frame)
-                print(f"[{count:04d}] 保存しました: {filename}")
+                print(f"✅ 【{classes[label_name]}】保存完了: {filename}")
 
-                count += 1
-
-            # QキーまたはEscキーで終了
+            if key == ord("c"):  # Cat
+                save_image("cat")
+            elif key == ord("n"):  # No Cat
+                save_image("no_cat")
             elif key == ord("q") or key == 27:
                 print("撮影を終了します。")
                 break

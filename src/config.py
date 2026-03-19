@@ -6,10 +6,11 @@ BEST_PARAMS_PATH = PROJECT_ROOT / "optuna_best_params.json"
 HEADLESS = False
 CAMERA_ID = 0
 FPS = 5
-MODEL_PATH = "models/yolov5su/yolov5su_size640x384_openvino_fp32_openvino_model"
+MODEL_PATH = "models/yolo26n.pt"
 CONFIDENCE = 0.2
 CLASS_ID = 15
-IMGSZ = 640
+IMGSZ_W = 640
+IMGSZ_H = 384
 DURATION_THRESH = 1.0
 RESET_THRESH = 5.0
 

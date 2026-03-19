@@ -1,210 +1,180 @@
 import argparse
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict
 
 import cv2
+import numpy as np
 
-import config
 from inference import CatDetector
 
-VALID_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp")
+# --- ヘルパー関数 ---
 
 
-def load_image_paths(directory: Path) -> List[Path]:
-    """ディレクトリから画像ファイルのパスだけを収集する（フレームは保持しない）。"""
+def calculate_iou(box1: np.ndarray, box2: np.ndarray) -> float:
+    """
+    2つのボックス(x1, y1, x2, y2)のIoUを計算する
+    """
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
 
-    paths: List[Path] = []
-    for path in sorted(directory.iterdir()):
-        if path.suffix.lower() not in VALID_EXTENSIONS:
-            continue
-        paths.append(path)
-    return paths
+    intersection = max(0, x2 - x1) * max(0, y2 - y1)
+    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    union = area1 + area2 - intersection
+
+    return intersection / union if union > 0 else 0
 
 
-def evaluate(
+def load_yolo_labels(path: Path) -> np.ndarray:
+    """
+    YOLO形式のtxtからボックスリスト(xyxy, 正規化)を読み込む
+    """
+    boxes = []
+    if not path.exists():
+        return np.array([])
+
+    with open(path, "r") as f:
+        for line in f:
+            parts = line.strip().split()
+            if len(parts) < 5:
+                continue
+            # class_id, cx, cy, w, h
+            cx, cy, bw, bh = map(float, parts[1:5])
+            x1, y1 = cx - bw / 2, cy - bh / 2
+            x2, y2 = cx + bw / 2, cy + bh / 2
+            boxes.append([x1, y1, x2, y2])
+
+    return np.array(boxes)
+
+
+def evaluate_with_boxes(
     detector: CatDetector,
-    with_cat_images: List[Path],
-    without_cat_images: List[Path],
-    params: Dict | None = None,
+    dataset_dir: Path,
+    iou_threshold: float = 0.45,
     verbose: bool = False,
-    warmup: bool = True,
 ) -> Dict:
     """
-    猫検出の評価を行い、混同行列と各種メトリクスを返す。
-
-    verbose=True の場合、FN/FP の詳細を標準出力に表示する。
+    ボックスの重なり(IoU)を考慮して精度を評価する
     """
-    tp = fn = tn = fp = 0
-    io_time_sec = 0.0
-    inference_time_sec = 0.0
-    original_params = detector.params.copy()
-    if params is not None:
-        detector.set_params(params)
+    img_dir = dataset_dir / "images"
+    label_dir = dataset_dir / "labels"
 
-    # --- ウォームアップ ---
-    # 初回のモデル初期化/キャッシュ生成が計測に混ざらないよう、1枚だけ推論しておく
-    if warmup:
-        warmup_path = (with_cat_images[0] if with_cat_images else None) or (
-            without_cat_images[0] if without_cat_images else None
-        )
-        if warmup_path is not None:
-            warmup_frame = cv2.imread(str(warmup_path))
-            if warmup_frame is not None:
-                try:
-                    detector.detect_cat(warmup_frame)
-                except Exception:
-                    pass
-
-    if verbose:
-        print("\n=== 猫がいる画像 (with_cat) の検証開始 ===")
-
-    for path in with_cat_images:
-        name = path.name
-        t0 = time.perf_counter()
-        frame = cv2.imread(str(path))
-        io_time_sec += time.perf_counter() - t0
-        if frame is None:
-            continue
-
-        t1 = time.perf_counter()
-        detected, _, _ = detector.detect_cat(frame)
-        inference_time_sec += time.perf_counter() - t1
-        if detected:
-            tp += 1
-        else:
-            fn += 1
-            if verbose:
-                print(f"[FN] 見逃し: {name}")
-
-    if verbose:
-        print("\n=== 猫がいない画像 (without_cat) の検証開始 ===")
-
-    for path in without_cat_images:
-        name = path.name
-        t0 = time.perf_counter()
-        frame = cv2.imread(str(path))
-        io_time_sec += time.perf_counter() - t0
-        if frame is None:
-            continue
-
-        t1 = time.perf_counter()
-        detected, conf, _ = detector.detect_cat(frame)
-        inference_time_sec += time.perf_counter() - t1
-        if detected:
-            fp += 1
-            if verbose:
-                print(f"[FP] 誤検知: {name} (信頼度: {conf:.2f})")
-        else:
-            tn += 1
-
-    total = tp + tn + fp + fn
-    accuracy = (tp + tn) / total if total else 0.0
-    precision = tp / (tp + fp) if (tp + fp) else 0.0
-    recall = tp / (tp + fn) if (tp + fn) else 0.0
-    f1 = (
-        (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+    image_paths = sorted(
+        [p for p in img_dir.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png")]
     )
 
-    detector.set_params(original_params)
+    stats = {"tp": 0, "fp": 0, "fn": 0, "tn": 0}
+    inference_times = []
+
+    for img_path in image_paths:
+        frame = cv2.imread(str(img_path))
+        if frame is None:
+            continue
+
+        # 1. 推論
+        t1 = time.perf_counter()
+        detected, conf, results = detector.detect_cat(frame)
+        inference_times.append(time.perf_counter() - t1)
+
+        # 検出ボックスの取得 (xyxy, 正規化座標)
+        pred_boxes = []
+        if detected and results:
+            # results[0].boxes.xyxyn は 0.0~1.0 の正規化座標
+            pred_boxes = results[0].boxes.xyxyn.cpu().numpy()
+
+        # 2. 正解(GT)ラベルの読み込み
+        label_path = label_dir / f"{img_path.stem}.txt"
+        gt_boxes = load_yolo_labels(label_path)
+
+        # 3. 判定ロジック
+        if len(gt_boxes) == 0:
+            # 【背景画像の場合】
+            if len(pred_boxes) == 0:
+                stats["tn"] += 1  # 正解：何も出なかった
+            else:
+                stats["fp"] += len(pred_boxes)  # 誤検知：何か出た
+                if verbose:
+                    print(f"[FP] 背景なのに検知: {img_path.name}")
+        else:
+            # 【猫がいる画像の場合】
+            matched_gt = set()
+            for p_box in pred_boxes:
+                best_iou = 0
+                best_gt_idx = -1
+                for i, g_box in enumerate(gt_boxes):
+                    iou = calculate_iou(p_box, g_box)
+                    if iou > best_iou:
+                        best_iou = iou
+                        best_gt_idx = i
+
+                if best_iou >= iou_threshold:
+                    if best_gt_idx not in matched_gt:
+                        stats["tp"] += 1
+                        matched_gt.add(best_gt_idx)
+                    else:
+                        stats["fp"] += 1  # 同じGTに2つ以上の枠が出た場合はFP扱い
+                else:
+                    stats["fp"] += 1  # 枠はあるが、場所が全然違う
+
+            # 見逃したGTの数
+            fn_count = len(gt_boxes) - len(matched_gt)
+            stats["fn"] += fn_count
+            if verbose and fn_count > 0:
+                print(f"[FN] 見逃し: {img_path.name}")
+
+    # メトリクス計算
+    tp, fp, fn, tn = stats["tp"], stats["fp"], stats["fn"], stats["tn"]
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+    f1 = (
+        2 * (precision * recall) / (precision + recall)
+        if (precision + recall) > 0
+        else 0
+    )
 
     return {
-        "tp": tp,
-        "tn": tn,
-        "fp": fp,
-        "fn": fn,
-        "accuracy": accuracy,
+        **stats,
         "precision": precision,
         "recall": recall,
         "f1": f1,
-        "io_time_sec": io_time_sec,
-        "inference_time_sec": inference_time_sec,
+        "avg_ms": np.mean(inference_times) * 1000,
     }
 
 
+# --- 実行メイン ---
+
+
 def main():
-    parser = argparse.ArgumentParser(description="猫検出モデルの精度を評価する")
+    parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--model",
-        type=Path,
-        default=None,
-        help="評価するモデルのパス (指定しない場合は config.MODEL_PATH)",
+        "--dir", type=str, default="dataset_boxed/val", help="評価するディレクトリ"
     )
     args = parser.parse_args()
 
-    dataset_dir = Path("dataset")
-    with_cat_dir = dataset_dir / "with_cat"
-    without_cat_dir = dataset_dir / "without_cat"
+    target_dir = Path(args.dir)
+    detector = CatDetector()  # モデルとベストパラメータは自動ロードされる
 
-    if not with_cat_dir.exists() or not without_cat_dir.exists():
-        print("エラー: データセットのディレクトリが見つかりません。")
-        print("以下の構成でフォルダを作成し、画像を配置してください:")
-        print(f"  - {with_cat_dir}/")
-        print(f"  - {without_cat_dir}/")
-        return
+    print(f"🚀 検証開始: {target_dir}")
+    print(f"📦 使用モデル: {detector.model_path.name}")
+    print(f"🛠️ 前処理設定: {detector.params}")
+    print("-" * 30)
 
-    # --- 修正ポイント: モデル名から専用のチューニング済みパラメータを自動で探す ---
-    target_model_path = args.model if args.model else Path(config.MODEL_PATH)
-    model_stem = target_model_path.stem
-    params_path = Path("best_params") / f"{model_stem}.json"
+    results = evaluate_with_boxes(detector, target_dir, verbose=True)
 
-    print(f"モデルのロード中... : {target_model_path.name}")
-    if params_path.exists():
-        print(f"専用パラメータを適用します: {params_path.name}")
-    else:
-        print("専用パラメータが見つからないため、デフォルト設定で評価します。")
-        params_path = None  # Noneを渡すと inference.py 側でデフォルトが使われる
-
-    try:
-        # モデルパスとパラメータパスを両方渡して初期化
-        detector = CatDetector(model_path=target_model_path, params_path=params_path)
-    except Exception as e:
-        print(f"モデルのロードに失敗しました: {e}")
-        return
-
-    with_cat_images = load_image_paths(with_cat_dir)
-    without_cat_images = load_image_paths(without_cat_dir)
-
-    if not with_cat_images and not without_cat_images:
-        print("\n評価対象の画像が見つかりませんでした。")
-        return
-
-    metrics = evaluate(
-        detector,
-        with_cat_images,
-        without_cat_images,
-        verbose=True,
-    )
-    total_images = metrics["tp"] + metrics["tn"] + metrics["fp"] + metrics["fn"]
-
-    avg_inference_time = (
-        (metrics["inference_time_sec"] / total_images * 1000) if total_images > 0 else 0
-    )
-
-    print("\n==================================")
-    print(f"    検証結果レポート ({target_model_path.name})")
-    print("==================================")
-    print(f"Total Images: {total_images}")
-    print("----------------------------------")
-    print("[Confusion Matrix / 混同行列]")
-    print(f"  TP (正解 - 検出成功) : {metrics['tp']}")
-    print(f"  TN (正解 - 無視成功) : {metrics['tn']}")
-    print(f"  FP (誤検知 - 誤作動) : {metrics['fp']}")
-    print(f"  FN (見逃し - 未検出) : {metrics['fn']}")
-    print("----------------------------------")
-    print("[Metrics / 評価指標]")
-    print(f"  Accuracy  (正解率) : {metrics['accuracy']:.2%}")
-    print(f"  Precision (適合率) : {metrics['precision']:.2%}")
-    print(f"  Recall    (再現率) : {metrics['recall']:.2%}")
-    print(f"  F1-Score (F1値)   : {metrics['f1']:.2%}")
-    print("----------------------------------")
-    print("[Performance / パフォーマンス]")
-    print(f"  Avg Inference Time : {avg_inference_time:.1f} ms / image")
-    print(
-        f"  Total Inference    : {metrics['inference_time_sec']:.2f} sec used for {total_images} images"
-    )
-    print(f"  Total I/O Read      : {metrics['io_time_sec']:.2f} sec")
-    print("==================================")
+    print("\n" + "=" * 40)
+    print(f" 📊 評価レポート: {target_dir.name}")
+    print("=" * 40)
+    print(f" 🟢 TP (正解): {results['tp']:>4} |  🔴 FP (誤検知): {results['fp']:>4}")
+    print(f" ⚪ TN (無視): {results['tn']:>4} |  🟡 FN (見逃し): {results['fn']:>4}")
+    print("-" * 40)
+    print(f" 🎯 Precision : {results['precision']:.2%}")
+    print(f" 📢 Recall    : {results['recall']:.2%}")
+    print(f" 🏆 F1-Score  : {results['f1']:.2%}")
+    print(f" ⚡ Speed     : {results['avg_ms']:.1f} ms/image")
+    print("=" * 40)
 
 
 if __name__ == "__main__":

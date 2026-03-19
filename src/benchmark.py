@@ -4,14 +4,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-import cv2
+import numpy as np
 
 from inference import CatDetector
-from precision import evaluate, load_image_paths
+
+# precision.py に前回作成した evaluate_with_boxes がある想定
+from precision import evaluate_with_boxes
 
 N_RUNS = 5
 
-# CSVの出力ヘッダーを固定（古い形式のCSVを読み込んだ際のエラー防止）
+# CSVの出力ヘッダー
 FIELDNAMES = [
     "Model_Name",
     "Format",
@@ -21,40 +23,37 @@ FIELDNAMES = [
     "Recall",
     "F1_Score",
     "Avg_Time(ms)",
-    "Avg_IO(ms)",
     "FPS",
 ]
 
 
 def main():
-    print("=== YOLO モデル 一括最適化 & ベンチマーク ===")
+    print("=== YOLO モデル 一括最適化 & IoUベンチマーク ===")
 
     # 1. 準備
     current_dir = Path(__file__).parent
-    tuning_script = current_dir / "tuning.py"
+    tuning_script = (
+        current_dir / "tune_v2.py"
+    )  # 前回の最適化スクリプト名に合わせてください
 
     models_dir = Path("models")
     best_params_dir = Path("best_params")
     best_params_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_dir = Path("dataset")
-    with_cat_dir = dataset_dir / "with_cat"
-    without_cat_dir = dataset_dir / "without_cat"
+    # dataset_boxed を使用
+    dataset_dir = Path("dataset_boxed/val")
+    if not dataset_dir.exists():
+        print(f"❌ エラー: ディレクトリが見つかりません: {dataset_dir}")
+        return
 
     csv_path = Path("benchmark_results.csv")
-    error_log_path = Path("error_models.txt")  # エラー記録用のファイル
+    error_log_path = Path("error_models.txt")
 
-    print("画像を読み込んでいます...")
-    with_cat_images = load_image_paths(with_cat_dir)
-    without_cat_images = load_image_paths(without_cat_dir)
-    total_images = len(with_cat_images) + len(without_cat_images)
-
-    # 2. 既存の進捗とエラー履歴を読み込む (レジューム機能)
+    # 2. 進捗とエラー履歴の読み込み
     results = []
     evaluated_models = set()
     error_models = set()
 
-    # 成功済みの結果を読み込み
     if csv_path.exists():
         try:
             with open(csv_path, "r", encoding="utf-8-sig") as f:
@@ -66,57 +65,40 @@ def main():
                 f"🔄 既存の進行状況を読み込みました。検証済み: {len(evaluated_models)}件"
             )
         except Exception as e:
-            print(f"⚠️ CSVの読み込みに失敗しました。新規で開始します: {e}")
-            results = []
-            evaluated_models = set()
+            print(f"⚠️ CSVの読み込み失敗: {e}")
 
-    # エラー履歴を読み込み
     if error_log_path.exists():
-        try:
-            with open(error_log_path, "r", encoding="utf-8") as f:
-                error_models = {line.strip() for line in f if line.strip()}
-            print(
-                f"🚫 過去にエラーが発生したモデルをスキップ対象として読み込みました: {len(error_models)}件"
-            )
-        except Exception as e:
-            print(f"⚠️ エラー履歴の読み込みに失敗しました: {e}")
+        error_models = {
+            line.strip()
+            for line in error_log_path.read_text().splitlines()
+            if line.strip()
+        }
+        print(f"🚫 スキップ対象(エラー履歴): {len(error_models)}件")
 
-    # 3. モデルの自動探索
-    onnx_mnn_files = list(models_dir.rglob("*.onnx")) + list(models_dir.rglob("*.mnn"))
-    # OpenVINO は「フォルダ(= exported_model)」として存在するケースがある
-    openvino_dirs = [
-        p
-        for p in models_dir.rglob("*openvino_model")
-        if p.is_dir() and any(p.glob("*.xml")) and any(p.glob("*.bin"))
-    ]
-
-    # テスト用途: ここをコメントアウトで切り替える
-    model_files = onnx_mnn_files + openvino_dirs  # 全部
-    # model_files = openvino_dirs  # OpenVINO だけ
-    # model_files = onnx_mnn_files  # ONNX/MNN だけ
-
-    # models/.cache を除外
+    # 3. モデル探索
+    model_files = list(models_dir.rglob("*.onnx")) + list(models_dir.rglob("*.mnn"))
+    model_files += [p for p in models_dir.rglob("*openvino_model") if p.is_dir()]
     model_files = [f for f in model_files if ".cache" not in str(f)]
-    print(f"合計 {len(model_files)} 個のモデルをチェックします。")
+
+    print(f"📦 合計 {len(model_files)} 個のモデルをスキャンします。")
 
     for i, model_path in enumerate(model_files, 1):
-        # ★ 検証済み、または過去にエラーになったモデルはスキップ
-        if model_path.stem in evaluated_models:
-            print(
-                f"\n--- [{i}/{len(model_files)}] {model_path.name} (⏭️ 検証済みのためスキップ) ---"
-            )
+        m_name = model_path.stem
+        if m_name in evaluated_models:
+            print(f"\n--- [{i}/{len(model_files)}] {m_name} (⏭️ スキップ: 検証済み) ---")
             continue
-        if model_path.stem in error_models:
+        if m_name in error_models:
             print(
-                f"\n--- [{i}/{len(model_files)}] {model_path.name} (🚫 過去のエラー記録によりスキップ) ---"
+                f"\n--- [{i}/{len(model_files)}] {m_name} (🚫 スキップ: 過去のエラー) ---"
             )
             continue
 
         print(f"\n--- [{i}/{len(model_files)}] {model_path.name} ---")
 
-        params_json = best_params_dir / f"{model_path.stem}.json"
+        # 4. パラメータ最適化 (存在しない場合のみ実行)
+        params_json = best_params_dir / f"{m_name}.json"
         if not params_json.exists():
-            print("🔍 パラメータが見つかりません。最適化を開始します...")
+            print("🔍 専用パラメータ未検出。最適化(Optuna)を開始...")
             try:
                 subprocess.run(
                     [
@@ -124,136 +106,83 @@ def main():
                         str(tuning_script),
                         "--model",
                         str(model_path),
+                        "--dir",
+                        str(dataset_dir),
                         "--trials",
                         "30",
                     ],
                     check=True,
                 )
-                print(f"✅ 最適化完了: {params_json.name}")
             except subprocess.CalledProcessError as e:
-                print(f"⚠️ チューニング中にエラーが発生しました（スキップします）: {e}")
+                print(f"⚠️ 最適化エラー: {e}")
+                error_models.add(m_name)
+                error_log_path.open("a").write(f"{m_name}\n")
                 continue
-        else:
-            print("✨ チューニング済みパラメータを適用します。")
 
-        # 4. 最適化された状態で評価
+        # 5. ベンチマーク実行
         try:
             detector = CatDetector(model_path=model_path)
 
-            # ウォームアップ（初回ロード/キャッシュ生成を計測に含めない）
-            warmup_path = (with_cat_images[0] if with_cat_images else None) or (
-                without_cat_images[0] if without_cat_images else None
+            # 計測用変数の初期化
+            metrics_list = []
+            print(f"⏱️ ベンチマーク実行中 ({N_RUNS}回平均)...")
+
+            for run_idx in range(N_RUNS):
+                # IoUベースの評価関数を呼び出し
+                m = evaluate_with_boxes(detector, dataset_dir, verbose=False)
+                metrics_list.append(m)
+
+            # 数値の平均化
+            avg_acc = np.mean(
+                [
+                    (m["tp"] + m["tn"]) / (m["tp"] + m["tn"] + m["fp"] + m["fn"])
+                    for m in metrics_list
+                ]
             )
-            if warmup_path is not None:
-                warmup_frame = cv2.imread(str(warmup_path))
-                if warmup_frame is not None:
-                    try:
-                        detector.detect_cat(warmup_frame)
-                    except Exception:
-                        pass
+            avg_pre = np.mean([m["precision"] for m in metrics_list])
+            avg_rec = np.mean([m["recall"] for m in metrics_list])
+            avg_f1 = np.mean([m["f1"] for m in metrics_list])
+            avg_ms = np.mean([m["avg_ms"] for m in metrics_list])
+            final_fps = 1000.0 / avg_ms if avg_ms > 0 else 0
 
-            total_accuracy = 0.0
-            total_precision = 0.0
-            total_recall = 0.0
-            total_f1 = 0.0
-            total_avg_ms = 0.0
-            total_avg_io_ms = 0.0
+            # 結果格納
+            row = {
+                "Model_Name": m_name,
+                "Format": "OPENVINO"
+                if model_path.is_dir()
+                else model_path.suffix[1:].upper(),
+                "Size": detector.imgsz,
+                "Accuracy": f"{avg_acc:.2%}",
+                "Precision": f"{avg_pre:.2%}",
+                "Recall": f"{avg_rec:.2%}",
+                "F1_Score": f"{avg_f1:.2%}",
+                "Avg_Time(ms)": f"{avg_ms:.1f}",
+                "FPS": f"{final_fps:.1f}",
+            }
+            results.append(row)
+            evaluated_models.add(m_name)
 
-            print(f"ベンチマークを {N_RUNS} 回実行して平均を計測中...")
-            for _ in range(N_RUNS):
-                metrics = evaluate(
-                    detector,
-                    with_cat_images,
-                    without_cat_images,
-                    verbose=False,
-                    warmup=False,
-                )
-
-                # 1周あたりの1枚推論時間（前処理+推論のみ）
-                avg_ms_per_run = (
-                    (metrics["inference_time_sec"] / total_images * 1000)
-                    if total_images
-                    else 0
-                )
-                avg_io_ms_per_run = (
-                    (metrics["io_time_sec"] / total_images * 1000)
-                    if total_images
-                    else 0
-                )
-
-                total_accuracy += metrics["accuracy"]
-                total_precision += metrics["precision"]
-                total_recall += metrics["recall"]
-                total_f1 += metrics["f1"]
-                total_avg_ms += avg_ms_per_run
-                total_avg_io_ms += avg_io_ms_per_run
-
-            # 平均値の計算
-            avg_accuracy = total_accuracy / N_RUNS
-            avg_precision = total_precision / N_RUNS
-            avg_recall = total_recall / N_RUNS
-            avg_f1 = total_f1 / N_RUNS
-            final_avg_ms = total_avg_ms / N_RUNS
-            final_avg_io_ms = total_avg_io_ms / N_RUNS
-            final_fps = (1000 / final_avg_ms) if final_avg_ms else 0
-
-            # 結果をリストに追加
-            results.append(
-                {
-                    "Model_Name": model_path.stem,
-                    "Format": (
-                        "OPENVINO"
-                        if model_path.is_dir()
-                        else model_path.suffix.replace(".", "").upper()
-                    ),
-                    "Size": detector.imgsz,
-                    "Accuracy": f"{avg_accuracy:.2%}",
-                    "Precision": f"{avg_precision:.2%}",
-                    "Recall": f"{avg_recall:.2%}",
-                    "F1_Score": f"{avg_f1:.2%}",
-                    "Avg_Time(ms)": f"{final_avg_ms:.1f}",
-                    "Avg_IO(ms)": f"{final_avg_io_ms:.1f}",
-                    "FPS": f"{final_fps:.1f}",
-                }
-            )
-            evaluated_models.add(model_path.stem)
-            print(f"📈 評価結果({N_RUNS}回平均): F1={avg_f1:.2%}, FPS={final_fps:.1f}")
-
-            # ★ 1モデル完了ごとにCSVへ上書き保存（進捗の保証）
-            results.sort(
-                key=lambda x: (float(str(x["F1_Score"]).strip("%")), float(x["FPS"])),
-                reverse=True,
-            )
+            # CSV保存（1モデルごとに更新してクラッシュ対策）
+            results.sort(key=lambda x: float(x["F1_Score"].strip("%")), reverse=True)
             with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
                 writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
                 writer.writeheader()
                 writer.writerows(results)
-            print(f"💾 {csv_path.name} に進捗を保存しました。")
+
+            print(f"✅ 完了: F1={avg_f1:.2%}, FPS={final_fps:.1f}")
 
         except Exception as e:
-            # ★ エラーになったモデルは txt に書き出して次回以降スキップ
-            print(f"❌ エラー発生: {e}")
-            with open(error_log_path, "a", encoding="utf-8") as f:
-                f.write(f"{model_path.stem}\n")
-            error_models.add(model_path.stem)
-            print(f"📝 {error_log_path.name} にエラーモデルとして記録しました。")
+            print(f"❌ 評価エラー: {e}")
+            error_log_path.open("a").write(f"{m_name}\n")
+            error_models.add(m_name)
 
         finally:
             if "detector" in locals():
                 del detector
             gc.collect()
 
-    # 5. 最終結果の表示
-    if not results:
-        print("有効な結果が得られませんでした。")
-        return
-
     print("\n" + "=" * 45)
-    print("            🏆 最終ベンチマーク結果 🏆")
-    print("=" * 45)
-    for i, res in enumerate(results[:5], 1):
-        print(f"{i}位: {res['Model_Name']}")
-        print(f"     F1: {res['F1_Score']} | FPS: {res['FPS']} | Size: {res['Size']}")
+    print("🏆 ベンチマーク完了！全モデルの評価が終わりました。")
     print("=" * 45)
 
 
