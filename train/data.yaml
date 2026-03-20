@@ -1,0 +1,23 @@
+# train/data.yaml
+path: ./train/dataset_augment
+train: images
+val: images
+
+nc: 16 # 0から15まであるので合計16クラス
+names:
+  0: item0
+  1: item1
+  2: item2
+  3: item3
+  4: item4
+  5: item5
+  6: item6
+  7: item7
+  8: item8
+  9: item9
+  10: item10
+  11: item11
+  12: item12
+  13: item13
+  14: item14
+  15: cat # ここを15に合わせる

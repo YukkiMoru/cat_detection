@@ -50,3 +50,10 @@ calibration_image_sample_data_20x128x128x3_float32.npy
 
 # benchmark result
 benchmark_results.csv
+
+# training
+train/dataset_augment
+train/dataset_origin
+train/runs
+train/models_origin
+

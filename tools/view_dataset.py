@@ -9,7 +9,7 @@ import cv2
 # ⚙️ 設定
 # ==========================================
 # 参照したいデータセットのディレクトリをリストで指定します
-DATASET_DIRS = [Path("dataset_boxed/val")]
+DATASET_DIRS = [Path("train/dataset_augment")]
 # ==========================================
 
 
