@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # uv run train/data_augment.py
 # train/dataset_origin/background/1.png,2.png... & train/dataset_origin/cutted/1.png,2.png...
-# -> train/dataset_augment
+# -> train/dataset_augment/train/
 
 import glob
 import os
@@ -14,7 +14,7 @@ import numpy as np
 BASE_DIR = "train/dataset_origin"
 BG_DIR = os.path.join(BASE_DIR, "background")
 CAT_DIR = os.path.join(BASE_DIR, "cutted")
-SAVE_DIR = "train/dataset_augment"
+SAVE_DIR = "train/dataset_augment/train"
 
 os.makedirs(os.path.join(SAVE_DIR, "images"), exist_ok=True)
 os.makedirs(os.path.join(SAVE_DIR, "labels"), exist_ok=True)
