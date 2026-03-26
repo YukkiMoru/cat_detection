@@ -5,21 +5,12 @@ from pathlib import Path
 import optuna
 
 from inference import CatDetector, load_best_params
-
-# 先ほど作成した IoU ベースの評価関数を precision.py からインポートする想定
 from precision import evaluate_with_boxes
 
 
 def build_trial_params(trial):
-    """Optuna の探索範囲定義"""
+    """Minimal構成のため confidence のみ探索する。"""
     return {
-        "alpha": trial.suggest_float("alpha", 0.3, 1.5),
-        "beta": trial.suggest_int("beta", -50, 50),
-        "gamma": trial.suggest_float("gamma", 0.5, 3.0),
-        "use_clahe": trial.suggest_categorical("use_clahe", [False, True]),
-        "clahe_clip": trial.suggest_float("clahe_clip", 1.0, 4.0),
-        "clahe_tile": trial.suggest_categorical("clahe_tile", [4]),  # 固定
-        "blur_ksize": trial.suggest_categorical("blur_ksize", [1, 3, 5]),
         "confidence": trial.suggest_float("confidence", 0.01, 0.7),
     }
 
@@ -28,7 +19,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Optunaで前処理パラメータを最適化(dataset_boxed対応)"
     )
-    parser.add_argument("--trials", type=int, default=50, help="試行回数")
+    parser.add_argument("--trials", type=int, default=20, help="試行回数")
     parser.add_argument("--model", type=Path, default=None, help="モデルパス")
     parser.add_argument(
         "--dir", type=Path, default=Path("dataset_boxed/val"), help="評価用ディレクトリ"
@@ -85,7 +76,11 @@ def main():
     study = optuna.create_study(direction="maximize")
 
     # 現在のベスト設定を最初の試行として登録
-    study.enqueue_trial(base_params)
+    seed_params = {}
+    if "confidence" in base_params:
+        seed_params["confidence"] = base_params["confidence"]
+    if seed_params:
+        study.enqueue_trial(seed_params)
 
     study.optimize(objective, n_trials=args.trials)
 

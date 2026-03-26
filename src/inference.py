@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import cv2
-import numpy as np
 from ultralytics import YOLO
 
 import config
@@ -83,12 +82,6 @@ class CatDetector:
 
         self.params = load_best_params(params_path)
 
-        # Cache用
-        self._lut_cache_key = None
-        self._lut_cache_table = None
-        self._clahe = None
-        self._clahe_cache_key = None
-
     def _configure_runtime_threads(self):
         num_threads = int(os.environ.get("CAT_DETECT_THREADS", os.cpu_count() or 4))
         cv2.setNumThreads(num_threads)
@@ -101,46 +94,10 @@ class CatDetector:
             self.params.update(params)
 
     def apply_preprocess(self, frame):
-        """歪みを抑えてリサイズし、前処理を適用"""
-        # アスペクト比を維持してリサイズ (1920x1080 -> 640x360 -> パディングして 640x384 等)
-        # 今回は簡易的に 16:9 -> 640x384 への直接リサイズ（歪みは最小限）
-        processed = cv2.resize(
+        """推論前処理は最小構成（リサイズのみ）にする。"""
+        return cv2.resize(
             frame, (self.imgsz_w, self.imgsz_h), interpolation=cv2.INTER_AREA
         )
-
-        alpha = float(self.params.get("alpha", 1.0))
-        beta = int(self.params.get("beta", 0))
-        gamma = float(self.params.get("gamma", 1.0))
-
-        # LUTによる高速なコントラスト/ガンマ補正
-        lut_key = (alpha, beta, gamma)
-        if self._lut_cache_key != lut_key:
-            x = np.arange(256, dtype=np.float32)
-            y = np.clip(x * alpha + beta, 0, 255)
-            if abs(gamma - 1.0) > 1e-6:
-                y = ((y / 255.0) ** (1.0 / gamma)) * 255.0
-            self._lut_cache_table = y.astype(np.uint8)
-            self._lut_cache_key = lut_key
-
-        processed = cv2.LUT(processed, self._lut_cache_table)
-
-        if self.params.get("use_clahe", False):
-            clip = self.params.get("clahe_clip", 2.0)
-            tile = self.params.get("clahe_tile", 4)
-            if self._clahe_cache_key != (clip, tile):
-                self._clahe = cv2.createCLAHE(clipLimit=clip, tileGridSize=(tile, tile))
-                self._clahe_cache_key = (clip, tile)
-
-            lab = cv2.cvtColor(processed, cv2.COLOR_BGR2LAB)
-            l, a, b = cv2.split(lab)
-            l = self._clahe.apply(l)
-            processed = cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
-
-        ksize = int(self.params.get("blur_ksize", 1))
-        if ksize > 1:
-            processed = cv2.GaussianBlur(processed, (ksize, ksize), 0)
-
-        return processed
 
     def detect_cat(self, frame) -> Tuple[bool, float, List[Any]]:
         processed = self.apply_preprocess(frame)

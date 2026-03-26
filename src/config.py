@@ -15,12 +15,5 @@ DURATION_THRESH = 1.0
 RESET_THRESH = 5.0
 
 VALID_PRESET = {
-    "alpha": 1.3526395510689064,
-    "beta": -3,
-    "gamma": 0.90653121009541,
-    "use_clahe": False,
-    "clahe_clip": 2.7435010513797966,
-    "clahe_tile": 4,
-    "blur_ksize": 3,
-    "confidence": 0.25984842563217536,
+    "confidence": CONFIDENCE,
 }
