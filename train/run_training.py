@@ -5,7 +5,7 @@ from ultralytics import YOLO
 def main():
     # 1. モデルの読み込み
     # ※事前学習済みの重み（yolo26n.pt等）をベースにします
-    model = YOLO("yolo26n.pt")
+    model = YOLO("yolo26s.pt")
 
     # 2. 学習の実行
     model.train(
