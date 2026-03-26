@@ -46,6 +46,16 @@ def rotate_background_safe(image, angle):
 
 
 def augment_and_paste():
+    # 既に生成済みならスキップ
+    img_dir = os.path.join(SAVE_DIR, "images")
+    if os.path.isdir(img_dir):
+        existing_imgs = glob.glob(os.path.join(img_dir, "*.jpg"))
+        if len(existing_imgs) > 0:
+            print(
+                f"✅ スキップ: {SAVE_DIR} に既に {len(existing_imgs)} 枚の画像が生成されています。"
+            )
+            return
+
     bg_files = glob.glob(os.path.join(BG_DIR, "*.png"))
     cat_files = glob.glob(os.path.join(CAT_DIR, "*.png"))
 
