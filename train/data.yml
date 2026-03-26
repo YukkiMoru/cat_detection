@@ -1,7 +1,7 @@
 # train/data.yaml
-path: ./train/dataset_augment
-train: images
-val: images
+path: ./train/dataset_augment/
+train: train
+val: val
 
 nc: 16 # 0から15まであるので合計16クラス
 names:
