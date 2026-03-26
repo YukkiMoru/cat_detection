@@ -15,7 +15,7 @@ def main():
         # --- ハードウェア最適化 (Colab T4向け) ---
         batch=-1,  # AutoBatch: VRAMの限界を自動計算
         device=0,  # 0番GPU (T4) を指定
-        workers=2,  # ColabのCPUコア数に合わせてボトルネックを防ぐ
+        workers=1,  # ColabのCPUコア数に合わせてボトルネックを防ぐ
         amp=True,  # 自動混合精度 (高速化・省メモリ)
         cache=True,  # RAMキャッシュ (※もしメモリ不足でColabが落ちる場合は False に変更してください)
         # --- 追加学習(ファインチューニング)のための最重要設定 ---
