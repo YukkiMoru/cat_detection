@@ -9,7 +9,7 @@ def main():
 
     # 2. 学習の実行
     model.train(
-        data="train/data.yaml",  # Train（Day1＋合成）と Val（Day2厳選）を定義したファイル
+        data="train/data.yml",  # Train（Day1＋合成）と Val（Day2厳選）を定義したファイル
         epochs=100,  # 最大学習回数
         imgsz=640,  # 画像サイズ
         # --- ハードウェア最適化 (Colab T4向け) ---
