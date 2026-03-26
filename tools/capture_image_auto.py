@@ -11,9 +11,9 @@ from ultralytics import YOLO
 # ==========================================
 # ⚙️ 設定 (ここだけ環境に合わせて変更してください)
 # ==========================================
-MODEL_PATH = "yolo26n.pt"  # 収集用に使う軽いモデル (自動でダウンロードされます)
+MODEL_PATH = "models/best.pt"  # 収集用に使う軽いモデル (自動でダウンロードされます)
 CAMERA_ID = 0  # カメラの番号
-SAVE_INTERVAL = 1.0  # 何秒ごとに保存するか
+SAVE_INTERVAL = 0.05  # 何秒ごとに保存するか
 DETECT_CLASS_ID = 15  # COCOデータセットの「猫」のIDは15
 SAVE_CLASS_ID = 0  # 新しく作る専用モデルのIDは「0」にする
 CONFIDENCE = 0.1  # 検出の閾値（0.4くらいが誤検知少なめ）

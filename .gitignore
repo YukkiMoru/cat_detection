@@ -53,3 +53,4 @@ benchmark_results.csv
 
 # training workspace
 train/dataset_origin
+train/dataset_augment
