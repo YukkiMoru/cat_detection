@@ -9,8 +9,8 @@ import cv2
 # ==========================================
 # ⚙️ 設定（検証用データ構築用）
 # ==========================================
-DATASET_DIRS = [Path("dataset_captured/1/train")]  # 元データ
-EXPORT_DIR = Path("dataset_boxed2/val")  # 選別後の保存先
+DATASET_DIRS = [Path("dataset_boxed/original")]  # 元データ
+EXPORT_DIR = Path("dataset_boxed2/original")  # 選別後の保存先
 CLASS_ID = 15  # 対象のクラスID
 # ==========================================
 

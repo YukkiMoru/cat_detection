@@ -36,6 +36,8 @@ models/yolov5mu
 # dataset
 dataset
 dataset_boxed
+dataset_boxed2
+dataset_boxed3
 
 # mermaid graph
 docs
