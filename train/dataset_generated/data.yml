@@ -1,5 +1,5 @@
-# train/data.yaml
-path: ./train/dataset_augment/
+# train/dataset_generated/data.yaml
+path: ./train/dataset_generated/
 train: train
 val: val
 

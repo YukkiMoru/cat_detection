@@ -5,11 +5,11 @@ from ultralytics import YOLO
 def main():
     # 1. モデルの読み込み
     # ※事前学習済みの重み（yolo26n.pt等）をベースにします
-    model = YOLO("yolo26s.pt")
+    model = YOLO("yolo26n.pt")
 
     # 2. 学習の実行
     model.train(
-        data="train/data.yml",  # Train（Day1＋合成）と Val（Day2厳選）を定義したファイル
+        data="train/dataset_generated/data.yml",
         epochs=100,  # 最大学習回数
         imgsz=640,  # 画像サイズ
         # --- ハードウェア最適化 (Colab T4向け) ---
